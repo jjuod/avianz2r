@@ -1,6 +1,6 @@
 Package: avianz2r
 Title: Reading and Processing of AviaNZ Annotations in R
-Version: 0.0.0.9000
+Version: 0.0.1
 Authors@R: 
     person(given = "Julius",
            family = "Juodakis",
@@ -10,8 +10,13 @@ Authors@R:
 Description: TODO What the package does (one paragraph).
 License: GPL (>= 3)
 Encoding: UTF-8
-LazyData: true
+LazyData: false
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.2
 URL: https://avianz.net/
 BugReports: https://github.com/jjuod/avianz2r/issues
+Imports: 
+    dplyr,
+    lubridate,
+    rjson,
+    tidyr
