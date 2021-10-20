@@ -1,5 +1,3 @@
-# Read one AviaNZ .data file (JSON)
-# into a dataframe
 #' Read one AviaNZ annotation file
 #'
 #' Reads one AviaNZ format .data file ("new style" JSON) into an R dataframe.
@@ -69,7 +67,51 @@ readAnnotsFile <- function(file){
 }
 
 
-
+#' Read AviaNZ annotations
+#'
+#' Reads one directory of AviaNZ format .data files into an R dataframe.
+#'
+#' @param dir Directory path containing AviaNZ annotations ("new-style" JSON format, as
+#'   defined in AviaNZ documentation). Will be explored recursively. File tree and
+#'   naming must follow one of these formats:
+#'   * `rec_date_time.wav.data` format. The filename of each `.data` file must contain
+#'     exactly three underscore-separated components, which will be parsed into
+#'     recorder ID, date and time. These files may be arranged into subdirectories in
+#'     anyway -- this arrangement will be ignored, and only the filename parsed.
+#'   * `rec/date_time.wav.data` format. The filename of each `.data` file must contain
+#'     exactly two underscore-separated components, which will be parsed into date
+#'     and time. These files must be arranged into subdirectories. The recorder name
+#'     will be determined from the lowest-level subdirectory: so the recorder for
+#'     `projectX/site1/day1/rec2/20010101_001234.wav.data` will be identified as `rec2`.
+#'     Higher-level directory structure, such as the `site1` here, are not important.
+#' @param time.formats All permissible timestamp formats for the files, in [strptime()]
+#'   format specification.
+#' @param exact If `FALSE`, a more sophisticated process of resolving timestamps will
+#'   be applied, which might help when a mixture of formats is present.
+#'   See [lubridate::parse_date_time()] for details. Use with care, as timestamps
+#'   are critical for subsequent handling -- in case of any suspicious outputs,
+#'   a safer solution may be to separate the data into subdirectories by format,
+#'   and load each separately.
+#'
+#' @return A dataframe (namely, tibble) with one row per each species label, and
+#'   at least 5 columns:
+#'   * `tstart` and `tend` (numeric, annotation position in seconds
+#'   from the file start)
+#'   * `freqmin` and `freqmax` (numeric, frequency bounds in Hz,
+#'   or 0, if not specified)
+#'   * any further columns from the label, typically `species`,
+#'   `certainty` and `filter`
+#'   * `ftime` (POSIXct, starting time of the file)
+#'   * `rec` (name of the recorder).
+#'
+#'   Note that an AviaNZ annotation may have multiple labels, corresponding to
+#'   different species; these will be parsed into individual rows.
+#'
+#' @export
+#'
+#' @examples
+#' annotdir = system.file("extdata", package="avianz2r", mustWork=TRUE)
+#' df <- readAnnots(annotdir)
 readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), exact=TRUE){
     # Scan for wav or bmp annotations
     filenames = list.files(dir, pattern=".(wav|bmp).data$", recursive=TRUE)
@@ -79,6 +121,11 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
 
     # Parse file names
     fn_parts = strsplit(basename(filenames), "_")
+    # Extracts lowest subdirs
+    subdirs = basename(dirname(filenames))
+
+    # TODO currently allowing only 3-comp names.
+    # need 2-comp + subdir, and no-timestamp
 
     if(all(sapply(fn_parts, length)==3)){
         message("Attempting filename parsing in REC_DATE_TIME format")
@@ -100,31 +147,61 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
             message(paste("reading file", filename))
             a = readAnnotsFile(file.path(dir, filename))
             if(length(a)>1){
+                a$ftime = finfo$alldts[fi]
+                a$rec = finfo$recnames[fi]
+                # Could also store the filename:
+                # a$fname = filename
+                as[[length(as)+1]] = a
+            }
+        }
+    } else if(all(sapply(fn_parts, length)==2) &
+              all(subdirs!="") & all(subdirs!=".")){
+        message("Attempting filename parsing in REC/DATE_TIME format")
+        # Merge the two parts into a timestamp
+        tstamps = sapply(fn_parts, function(x) paste(x[1], sub(".(wav|bmp).data", "", x[2]), sep="_"))
+        # Attempt to parse timestamps. We pretend they are in POSIXct,
+        # to avoid DST gaps which are not accounted by field sensors etc.
+        alldts = lubridate::parse_date_time(tstamps, time.formats, exact=exact, tz="UTC")
+        # Force error (lubridate only warns on failure)
+        if(any(is.na(alldts))){
+            print(filenames[which(is.na(alldts))])
+            stop("The above filename(s) could not be parsed into timestamps, cannot continue")
+        }
+
+        finfo = data.frame(filenames, alldts, recnames=subdirs)
+        for(fi in 1:nrow(finfo)){
+            filename = finfo$filenames[fi]
+            message(paste("reading file", filename))
+            a = readAnnotsFile(file.path(dir, filename))
+            if(length(a)>1){
                 a$time = finfo$alldts[fi]
                 a$rec = finfo$recnames[fi]
                 # Could also store the filename:
                 # a$fname = filename
-                as = c(as, a)
+                as[[length(as)+1]] = a
             }
         }
-        as = dplyr::bind_rows(as)
-
     } else {
         print(fn_parts)
-        stop(paste("Not all filenames have 3 underscore-separated components.",
-                   "Check if they are formatted correctly."))
+        stop(paste("Consistent filename format could not be identifed.\n",
+                    "Check if they are formatted correctly."))
     }
 
 
-    # TODO currently assuming perfect names
-    if(nrow(as)==0) warning("no annotations read!")
+    if(length(as)==0){
+        warning("no annotations read!")
+        return(as)
+    }
+
+    as = dplyr::bind_rows(as)
 
 
-    # actual start and end of call
-    annot$start = annot$time + seconds(annot$X1)
-    annot$end = annot$time + seconds(annot$X2)
+    # TODO create actual start and end of call
+    # annot$start = annot$time + seconds(annot$X1)
+    # annot$end = annot$time + seconds(annot$X2)
+    # annot$calllength = annot$end - annot$start
 
-    annot$calllength = annot$end - annot$start
+    # TODO test if everything works w/ both stringsAsFactors
 
     return(as)
 }
