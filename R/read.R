@@ -110,6 +110,8 @@ readAnnotsFile <- function(file){
 #' @export
 #'
 #' @examples
+#' # Read two annotation files from two recorders, stored in a single folder
+#' # and named in rec_date_time format
 #' annotdir = system.file("extdata", package="avianz2r", mustWork=TRUE)
 #' df <- readAnnots(annotdir)
 readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), exact=TRUE){
@@ -124,11 +126,11 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
     # Extracts lowest subdirs
     subdirs = basename(dirname(filenames))
 
-    # TODO currently allowing only 3-comp names.
-    # need 2-comp + subdir, and no-timestamp
+    # TODO currently allowing 3-comp and 2-comp+subdir names.
+    # need no-timestamp fallback
 
     if(all(sapply(fn_parts, length)==3)){
-        message("Attempting filename parsing in REC_DATE_TIME format")
+        message("*** Attempting filename parsing in REC_DATE_TIME format ***")
         # Merge the last two parts into a timestamp
         tstamps = sapply(fn_parts, function(x) paste(x[2], sub(".(wav|bmp).data", "", x[3]), sep="_"))
         # Attempt to parse timestamps. We pretend they are in POSIXct,
@@ -156,7 +158,7 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
         }
     } else if(all(sapply(fn_parts, length)==2) &
               all(subdirs!="") & all(subdirs!=".")){
-        message("Attempting filename parsing in REC/DATE_TIME format")
+        message("*** Attempting filename parsing in REC/DATE_TIME format ***")
         # Merge the two parts into a timestamp
         tstamps = sapply(fn_parts, function(x) paste(x[1], sub(".(wav|bmp).data", "", x[2]), sep="_"))
         # Attempt to parse timestamps. We pretend they are in POSIXct,
@@ -202,6 +204,8 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
     # annot$calllength = annot$end - annot$start
 
     # TODO test if everything works w/ both stringsAsFactors
+
+    message(sprintf("Loaded %d annotations from %d recorders", nrow(as), length(unique(as$rec))))
 
     return(as)
 }

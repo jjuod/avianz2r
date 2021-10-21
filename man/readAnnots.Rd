@@ -58,6 +58,8 @@ different species; these will be parsed into individual rows.
 Reads one directory of AviaNZ format .data files into an R dataframe.
 }
 \examples{
+# Read two annotation files from two recorders, stored in a single folder
+# and named in rec_date_time format
 annotdir = system.file("extdata", package="avianz2r", mustWork=TRUE)
 df <- readAnnots(annotdir)
 }

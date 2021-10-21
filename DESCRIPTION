@@ -1,6 +1,6 @@
 Package: avianz2r
 Title: Reading and Processing of AviaNZ Annotations in R
-Version: 0.0.2
+Version: 0.0.3
 Authors@R: 
     person(given = "Julius",
            family = "Juodakis",
@@ -17,6 +17,7 @@ URL: https://avianz.net/
 BugReports: https://github.com/jjuod/avianz2r/issues
 Imports: 
     dplyr,
-    lubridate,
+    lubridate (>= 1.7.10),
+    magrittr,
     rjson,
-    tidyr
+    tidyr (>= 1.1.3)
