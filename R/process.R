@@ -59,7 +59,7 @@ lag_clocks <- function(annots, lags){
 }
 
 
-#' Convert annotations to a capture history
+#' Convert annotations to a call history
 #'
 #' Converts a dataframe of timestamped annotations into a shape compatible
 #'   with [ascr::create.capt()].
@@ -98,10 +98,10 @@ lag_clocks <- function(annots, lags){
 #' annots <- data.frame(rec=c("rec1", "rec1", "rec2", "rec2"),
 #'   tstart=c(0.0, 5.5, 1.5, 9), tend=c(5.0, 6.5, 6.0, 13))
 #' ## merge into two unique calls + 1 recapture:
-#' annots_to_capt(annots, gap=0)
+#' annots_to_calls(annots, gap=0)
 #' ## or we can separate out the short annotation in rec1 as another call:
-#' annots_to_capt(annots, gap=-1)
-annots_to_capt <- function(annots, gap=0){
+#' annots_to_calls(annots, gap=-1)
+annots_to_calls <- function(annots, gap=0){
     # Expect all annotations from the same species.
     # I don't see why anyone would analyze multiple species together,
     # but it doesn't really break anything for this, so just warn.
@@ -131,7 +131,7 @@ annots_to_capt <- function(annots, gap=0){
     output = data.frame(id=0, rec=annots$rec)
 
     # Group overlapping annotations into calls:
-    # (doesn't actually merge, just assings appropriate callIDs
+    # (doesn't actually merge, just assigns appropriate callIDs
     # indicating pieces or recaptures of the same call)
     currend = -Inf  # (ensures that first row always starts a new call)
     for(i in 1:nrow(annots)){
@@ -157,13 +157,11 @@ annots_to_capt <- function(annots, gap=0){
     output = unique(output)
 
     # Prepare for create.capt:
-    output$session = 1  # session parameter, could develop
-    output$occ = 1  # occasion parameter, ignored in ascr
-    # output$recid = ??  # TODO come up with a recorder numbering
-    output = output[,c("session", "id", "occ", "rec")]
-    # TODO should we call create.capt here?
+    output = output[,c("session", "id", "rec")]
+    # TODO ensure other aux info is not dropped
     return(output)
 }
+
 
 
 # TODO could actually add a separate function to merge call pieces.
@@ -193,110 +191,106 @@ annots_to_capt <- function(annots, gap=0){
 #     return(presence)
 # }
 
+# TODO grouped merging (pass groups as argument)
 
-#' Visualize annotation times
+# TODO convert to 0-1 for binary concordance metrics?
+
+
+#' Title
 #'
-#' Plots the provided timestamps for a quick visual overview, separating by species and recorders.
+#' @param calls
+#' @param gpspos
+#' @param survey.recs
 #'
-#' @param annots A dataframe containing at least `tstart` and `tend` columns.
-#'   The annotations will be shown as line segments covering `[tstart; tend]`.
-#'   These columns must be POSIXt timestamps.
-#'   Columns `rec` and/or `species`, if present and containing more than one unique value,
-#'   will be used to spread out the timestamps along the Y axis. AviaNZ annotations
-#'   can be read into this form directly with [readAnnots()] or [readAnnotsFile()].
-#' @param days,hours Optional, numeric vectors. If specified, will only plot annotations
-#'   starting within this(these) day(s) of the month or hour(s).
-#'   Typically, only several hours of data can be usefully shown on this type of plot,
-#'   as afterwards calls become too short and dense to distinguish. These parameters
-#'   are provided as a quick way to inspect the data in parts.
-#'
-#' @return A ggplot plot object. Such plots can be modified with the `+` operator;
-#'   see [ggplot2] documentation for details.
+#' @return A named list with `calls` and `traps` elements which can be directly
+#'   used in [ascr::create.capt()]. The main difference from inputs is that `calls`
+#'   will have ... TODO
 #' @export
 #'
 #' @examples
-#' annotdir = system.file("extdata", package="avianz2r", mustWork=TRUE)
-#' df <- readAnnots(annotdir)
-#' plot_annots(df, hours=1)
-#' # modifying the plot to split off custom time periods as rows:
-#' library(ggplot2)
-#' library(lubridate)
-#' plot_annots(df[df$rec=="recA",]) +
-#'   facet_wrap(~minute(tstart), nrow=2, scales="free") +
-#'   scale_x_datetime(date_breaks="10 sec", date_minor_breaks="1 sec", date_label="%M.%S")
-plot_annots <- function(annots, days=NULL, hours=NULL){
-    if(!is.data.frame(annots) | !"tstart" %in% colnames(annots) | !"tend" %in% colnames(annots)){
-        stop("Data malformed, must be a dataframe with 'rec', 'tstart' and 'tend' columns.")
+#'
+#' # Recorder positions in eastings-northings (preferrably in meters).
+#' # You will likely want to project these from GPS, e.g. using rgdal::spTransform
+#' gpspos = data.frame(rec=c("recA", "recB"),
+#'                     east=c(-50, 50),
+#'                     north=c(0, 175))
+#'
+#' # format calls and traps appropriately
+#' l = prepare_capt()
+#'
+#' # Prepare the actual capt object and run acoustic SCR
+#' library(ascr)
+#' capt = ascr::create.capt(l$calls, traps=l$traps)
+#' mask = ascr::create.mask(traps, buffer=700)
+#' cr = ascr::fit.ascr(capt, traps, mask)
+prepare_capt <- function(calls, gpspos, survey.recs=NULL){
+    # Input checks
+    if(!is.data.frame(calls) | !"rec" %in% colnames(calls) |
+       !"id" %in% colnames(calls)){
+        stop("Call history malformed, must be a dataframe with 'rec' and 'id' columns")
     }
-    if(!lubridate::is.POSIXt(annots$tstart) | !lubridate::is.POSIXt(annots$tend)){
-        stop("Data malformed, timestamps must be in POSIXct or POSIXlt format.")
+    if(!is.data.frame(gpspos) | !"rec" %in% colnames(gpspos) |
+       !"east" %in% colnames(gpspos) | !"north" %in% colnames(gpspos)){
+        stop("Recorder positions malformed, must be a dataframe with 'rec', 'east' and 'north' columns")
     }
+    # recid will be merged from gpspos, and so cannot be in the input:
+    calls$recid = NULL
 
-    if(!is.null(days)){
-        annots = annots[which(lubridate::day(annots$tstart) %in% days),]
-    }
-    if(!is.null(hours)){
-        annots = annots[which(lubridate::hour(annots$tstart) %in% hours),]
-    }
-
-    # Determine Y aesthetic: by species, recorders, or both, depending
-    # on what has variety.
-    byspecies = byrec = FALSE
-    if("species" %in% colnames(annots)){
-        if(length(unique(annots$species))>1){
-            byspecies=TRUE
+    # Remove any recorders that were broken/not used in this survey
+    if(!is.null(survey.recs)){
+        if(!all(survey.recs %in% gpspos$rec)){
+            stop("Some of the specified survey recorders not present in the position data.")
+        }
+        gpspos = gpspos[which(gpspos$rec %in% survey.recs),]
+        if(nrow(gpspos)==0){
+            stop("All recorders dropped. Check if survey.recs is specified correctly.")
         }
     }
-    if("rec" %in% colnames(annots)){
-        if(length(unique(annots$rec))>1){
-            byrec=TRUE
-        }
+    if(any(duplicated(gpspos$rec))) stop("Recorder positions must be unique")
+
+    # In theory some recorders may naturally have no calls
+    # or the user may choose to not use them (not provide positions)
+    # so just warn in these cases:
+    not_in_gpspos = setdiff(calls$rec, gpspos$rec)
+    not_in_calls = setdiff(gpspos$rec, calls$rec)
+    if(length(not_in_gpspos)>0){
+        warning(paste("Dropping these recorders for which no positions provided:", not_in_gpspos))
     }
-    if(byspecies & byrec){
-        annots$y = paste(annots$rec, annots$species, sep="/")
-    } else if(byspecies){
-        annots$y = annots$species
-    } else if(byrec){
-        annots$y = annots$rec
-    } else {
-        annots$y = "calls"  # dummy, just to have all marks at same y
+    if(length(not_in_calls)>0){
+        warning(paste("No calls detected for these recorders:", not_in_calls))
     }
 
-    totalsec = diff(range(annots$tstart))
-    # Some heuristics to choose appropriate breaks,
-    # because ggplot2::scale_*_datetime for some reason only accepts
-    # fixed size breaks.
-    # Note also that time periods must be in cut.POSIXt format.
-    if(totalsec<lubridate::minutes(3)){
-        date_breaks="30 sec"
-        date_minor_breaks="5 sec"
-    } else if(totalsec<lubridate::minutes(10)){
-        date_breaks="1 min"
-        date_minor_breaks="10 sec"
-    } else if(totalsec<lubridate::hours(2)){
-        date_breaks="10 min"
-        date_minor_breaks="2 min"
-    } else if(totalsec<lubridate::hours(12)){
-        date_breaks="1 hour"
-        date_minor_breaks="10 min"
-    } else {
-        date_breaks="6 hour"
-        date_minor_breaks="1 hour"
+    # create a numeric index column, in case rec names are characters
+    gpspos$recid = 1:nrow(gpspos)
+    message(sprintf("Using %d recorders.", nrow(gpspos)))
+
+    # Call history prep:
+    calls$occ = 1  # add dummy occasion parameter, ignored in ascr
+    calls$session = 1  # add session parameter
+    # TODO user should be able to have flexibility in this,
+    # but not sure where to pass it
+
+    # Replace recorder names with numeric IDs
+    calls = as.data.frame(dplyr::inner_join(calls, gpspos, by="rec"))
+
+    # Reorder columns per ascr::create.capt requirements:
+    cols_start = c("session", "id", "occ", "recid")
+    cols_rest = setdiff(colnames(calls), cols_start)
+    calls = calls[,c(cols_start, cols_rest)]
+
+    # The remaining columns will be dropped by ascr::create.capt,
+    # so warn here - it may suggest that the user didn't name something properly:
+    cols_accepted = c("bearing", "dist", "ss", "toa",
+                      "east", "north", "rec") # columns that we add
+    cols_unknown = setdiff(cols_rest, cols_accepted)
+    if(length(cols_unknown)>0){
+        warning(paste("The following columns will be ignored by ascr:",
+                      cols_unknown))
     }
 
-    p = ggplot2::ggplot(annots) +
-        ggplot2::geom_segment(ggplot2::aes(x=tstart, xend=tend, y=y, yend=y),
-                              size=5, col="red") +
-        # facet_wrap(~quarter, scales="free_x", nrow=4) +
-        ggplot2::scale_x_datetime(date_breaks=date_breaks, date_minor_breaks=date_minor_breaks,
-                                  date_labels="%H:%M:%S",    # dates are ignored, but understood to be naturally
-                                  expand=expansion(add=10),  # 10 second additive expansion
-                                  name=NULL) +
-        ggplot2::ylab(NULL) +
-        ggplot2::theme_minimal() + ggplot2::theme(panel.grid.major.y = ggplot2::element_blank(),
-                                strip.background = ggplot2::element_blank(),
-                                strip.text = ggplot2::element_blank())
-    return(p)
+    # Trap prep:
+    # require input already projected to northings-eastings
+    traps = as.matrix(gpspos[,c("east", "north")])
+
+    return(list(calls=calls, traps=traps))
 }
-
-# TODO sort out the check() fails here
