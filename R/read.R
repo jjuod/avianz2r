@@ -52,6 +52,11 @@ readAnnotsFile <- function(file){
     colnames(a) = c("tstart", "tend", "freqmin", "freqmax", "label")
     a$tstart = as.numeric(a$tstart)
     a$tend = as.numeric(a$tend)
+    # Some old annotations may be stored in either start-end order
+    flipped_t = which(a$tstart>a$tend)
+    if(length(flipped_t)>0){
+        a[flipped_t, c("tstart", "tend")] = a[flipped_t, c("tend", "tstart")]
+    }
     a$freqmin = as.numeric(a$freqmin)
     a$freqmax = as.numeric(a$freqmax)
 
@@ -66,6 +71,24 @@ readAnnotsFile <- function(file){
     return(a)
 }
 
+# Core loop for directory reading
+loop_over_files <- function(d, filenames, alldts, recnames){
+    as = list()
+    finfo = data.frame(filenames, alldts, recnames)
+    for(fi in 1:nrow(finfo)){
+        filename = finfo$filenames[fi]
+        message(paste("...reading file", filename))
+        a = readAnnotsFile(file.path(d, filename))
+        if(length(a)>1){
+            a$ftime = finfo$alldts[fi]
+            a$rec = finfo$recnames[fi]
+            # Could also store the filename:
+            # a$fname = filename
+            as[[length(as)+1]] = a
+        }
+    }
+    return(as)
+}
 
 #' Read AviaNZ annotations
 #'
@@ -86,10 +109,10 @@ readAnnotsFile <- function(file){
 #'     Higher-level directory structure, such as the `site1` here, are not important.
 #' @param time.formats All permissible timestamp formats for the files, in [strptime()]
 #'   format specification.
-#' @param exact If `FALSE`, a more sophisticated process of resolving timestamps will
-#'   be applied, which might help when a mixture of formats is present.
-#'   See [lubridate::parse_date_time()] for details. Use with care, as timestamps
-#'   are critical for subsequent handling -- in case of any suspicious outputs,
+#' @param exact Passed to [lubridate::parse_date_time()]. If `FALSE`, timestamps will be
+#'   resolved by a more sophisticated process, which might help when a mixture of formats
+#'   is present. See [lubridate::parse_date_time()] for details. Use with care, as
+#'   timestamps are critical for subsequent handling -- in case of any suspicious outputs,
 #'   a safer solution may be to separate the data into subdirectories by format,
 #'   and load each separately.
 #'
@@ -119,8 +142,6 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
     filenames = list.files(dir, pattern=".(wav|bmp).data$", recursive=TRUE)
     if(length(filenames)==0) stop(paste("no .data files found in directory", dir))
 
-    as = list()
-
     # Parse file names
     fn_parts = strsplit(basename(filenames), "_")
     # Extracts lowest subdirs
@@ -143,19 +164,7 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
         }
 
         recnames = sapply(fn_parts, "[", 1)
-        finfo = data.frame(filenames, alldts, recnames)
-        for(fi in 1:nrow(finfo)){
-            filename = finfo$filenames[fi]
-            message(paste("reading file", filename))
-            a = readAnnotsFile(file.path(dir, filename))
-            if(length(a)>1){
-                a$ftime = finfo$alldts[fi]
-                a$rec = finfo$recnames[fi]
-                # Could also store the filename:
-                # a$fname = filename
-                as[[length(as)+1]] = a
-            }
-        }
+        as = loop_over_files(dir, filenames, alldts, recnames)
     } else if(all(sapply(fn_parts, length)==2) &
               all(subdirs!="") & all(subdirs!=".")){
         message("*** Attempting filename parsing in REC/DATE_TIME format ***")
@@ -170,25 +179,12 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
             stop("The above filename(s) could not be parsed into timestamps, cannot continue")
         }
 
-        finfo = data.frame(filenames, alldts, recnames=subdirs)
-        for(fi in 1:nrow(finfo)){
-            filename = finfo$filenames[fi]
-            message(paste("reading file", filename))
-            a = readAnnotsFile(file.path(dir, filename))
-            if(length(a)>1){
-                a$time = finfo$alldts[fi]
-                a$rec = finfo$recnames[fi]
-                # Could also store the filename:
-                # a$fname = filename
-                as[[length(as)+1]] = a
-            }
-        }
+        as = loop_over_files(dir, filenames, alldts, subdirs)
     } else {
         print(fn_parts)
         stop(paste("Consistent filename format could not be identifed.\n",
                     "Check if they are formatted correctly."))
     }
-
 
     if(length(as)==0){
         warning("no annotations read!")
@@ -197,12 +193,12 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
 
     as = dplyr::bind_rows(as)
 
+    # Convert timestamp to "absolute" time (pretend-UTC,
+    # i.e. recorder clock time registered as UTC).
+    as$tstart = as$ftime + as$tstart
+    as$tend = as$ftime + as$tend
 
-    # TODO create actual start and end of call
-    # annot$start = annot$time + seconds(annot$X1)
-    # annot$end = annot$time + seconds(annot$X2)
-    # annot$calllength = annot$end - annot$start
-
+    # TODO maybe drop ftime afterwards?
     # TODO test if everything works w/ both stringsAsFactors
 
     message(sprintf("Loaded %d annotations from %d recorders", nrow(as), length(unique(as$rec))))

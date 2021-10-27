@@ -4,11 +4,11 @@
 \alias{lag_clocks}
 \title{Shift timestamps for each recorder}
 \usage{
-lag_clocks(data, lags)
+lag_clocks(annots, lags)
 }
 \arguments{
-\item{data}{A dataframe containing at least \code{tstart} and \code{tend} columns with
-values to be adjusted, and a \code{rec} with recorder IDs for matching with lags.
+\item{annots}{A dataframe containing at least \code{tstart} and \code{tend} columns with
+values to be adjusted, and a \code{rec} column with recorder IDs for matching with lags.
 AviaNZ annotations can be read into this form directly with \code{\link[=readAnnots]{readAnnots()}} or
 \code{\link[=readAnnotsFile]{readAnnotsFile()}}.}
 

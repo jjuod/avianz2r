@@ -2,8 +2,8 @@
 #'
 #' Applies recorder-level adjustments (lag or lead) to synchronize timestamps across recorders.
 #'
-#' @param data A dataframe containing at least `tstart` and `tend` columns with
-#'   values to be adjusted, and a `rec` with recorder IDs for matching with lags.
+#' @param annots A dataframe containing at least `tstart` and `tend` columns with
+#'   values to be adjusted, and a `rec` column with recorder IDs for matching with lags.
 #'   AviaNZ annotations can be read into this form directly with [readAnnots()] or
 #'   [readAnnotsFile()].
 #'
@@ -26,21 +26,21 @@
 #' clocklags = data.frame(rec=c("recA", "recB", "recC"),
 #'                        lag=c(0, 10, -5))
 #' lag_clocks(annots, clocklags)
-lag_clocks <- function(data, lags){
+lag_clocks <- function(annots, lags){
     # Format checks:
-    if(!is.data.frame(data) | !"rec" %in% colnames(data) |
-       !"tstart" %in% colnames(data) | !"tend" %in% colnames(data)){
+    if(!is.data.frame(annots) | !"rec" %in% colnames(annots) |
+       !"tstart" %in% colnames(annots) | !"tend" %in% colnames(annots)){
         stop("Data malformed, must be a dataframe with 'rec', 'tstart' and 'tend' columns.")
     }
-    if("lags" %in% colnames(data)){
+    if("lags" %in% colnames(annots)){
         stop("Data already contains a 'lag' column. Rename that if it should be kept.")
     }
     if(!is.data.frame(lags) | !"lag" %in% colnames(lags)){
         stop("Lags malformed, must be a dataframe with 'rec' and 'lag' columns.")
     }
-    not_in_lags = setdiff(data$rec, lags$rec)
-    not_in_data = setdiff(lags$rec, data$rec)
-    if(!all(data$rec %in% lags$rec)){
+    not_in_lags = setdiff(annots$rec, lags$rec)
+    not_in_data = setdiff(lags$rec, annots$rec)
+    if(!all(annots$rec %in% lags$rec)){
         stop(paste("Clock shifts missing for some recorders:", not_in_lags))
     }
     if(length(not_in_data)>0){
@@ -51,9 +51,252 @@ lag_clocks <- function(data, lags){
     }
 
     # Actual adjustment:
-    data = dplyr::left_join(data, lags, by="rec") %>%
+    annots = dplyr::left_join(annots, lags, by="rec") %>%
         dplyr::mutate(tstart = tstart+lag, tend = tend+lag) %>%
         dplyr::select(!lag)
 
-    return(data)
+    return(annots)
 }
+
+
+#' Convert annotations to a capture history
+#'
+#' Converts a dataframe of timestamped annotations into a shape compatible
+#'   with [ascr::create.capt()].
+#'
+#' Acoustic SCR requires identifying which detections in a survey represent
+#'   re-captures of the same cue. This function does that simply by using
+#'   temporal overlap: any annotations that overlap in time by at least `gap`
+#'   seconds are assumed to be recaptures of the same call, and assigned a
+#'   shared call ID. Note that this will merge both recaptures across recorders,
+#'   and also annotations within each recorder, such as when several annotations
+#'   are produced for the same call.
+#'   Note that any further annotation details (call type, species) will be ignored,
+#'   i.e. calls labelled as different species, overlapping in time, will still be
+#'   merged. If you wish to use such information, split the data by the groups yourself
+#'   and apply this function to each separately.
+#'
+#' @param annots A dataframe containing at least `tstart` and `tend` columns,
+#'   and a `rec` column with recorder IDs. The timestamp columns are typically
+#'   numeric or POSIXt. AviaNZ annotations can be read into
+#'   this form directly with [readAnnots()] or [readAnnotsFile()].
+#' @param gap A number in the same units as `tstart,tend`.
+#'   Annotations that are separated by this much or more will be merged into
+#'   a single call. Default 0 merges any annotations that overlap or touch;
+#'   setting it larger is useful if the calls are often detected as multiple
+#'   annotations which should be merged into a single unit. Setting it below 0
+#'   will only merge annotations that overlap by at least `gap` time units, which
+#'   could help avoid falsely merging distinct calls if they occur frequently.
+#'
+#' @return A dataframe where... ??? TODO describe exactly the columns
+#'   Recaptures of the same call will be assigned the same ID.
+#' @export
+#'
+#' @examples
+#' ## rec1 captures what looks like two pieces of the same call
+#' ## rec2 recaptures part of the same call, and another cue:
+#' annots <- data.frame(rec=c("rec1", "rec1", "rec2", "rec2"),
+#'   tstart=c(0.0, 5.5, 1.5, 9), tend=c(5.0, 6.5, 6.0, 13))
+#' ## merge into two unique calls + 1 recapture:
+#' annots_to_capt(annots, gap=0)
+#' ## or we can separate out the short annotation in rec1 as another call:
+#' annots_to_capt(annots, gap=-1)
+annots_to_capt <- function(annots, gap=0){
+    # Expect all annotations from the same species.
+    # I don't see why anyone would analyze multiple species together,
+    # but it doesn't really break anything for this, so just warn.
+    if("species" %in% colnames(annots)){
+        if(length(unique(annots$species))>1){
+            warning(paste("Multiple species annotations detected. Note that species labels",
+                          " will be ignored when merging the annotations into recaptures.",
+                          " Filter by species and apply this function separately if this is not desired."))
+        }
+    }
+
+    # Importantly, checking if times are actually in UTC,
+    # to minimize any DST gap issues
+    if(!is.data.frame(annots) | !"rec" %in% colnames(annots) |
+       !"tend" %in% colnames(annots) | !"tstart" %in% colnames(annots)){
+        stop("Annotations malformed, must be a dataframe with 'rec', 'tstart' and 'tend' columns")
+    }
+    if(!is.numeric(gap) | length(gap)>1){
+        stop("Gap must be a single number.")
+    }
+
+    annots = annots[order(annots$tstart),]
+
+    # The output at first will have 1 row per each input row,
+    # and some duplicates (call pieces for the same recorder)
+    # will be removed later
+    output = data.frame(id=0, rec=annots$rec)
+
+    # Group overlapping annotations into calls:
+    # (doesn't actually merge, just assings appropriate callIDs
+    # indicating pieces or recaptures of the same call)
+    currend = -Inf  # (ensures that first row always starts a new call)
+    for(i in 1:nrow(annots)){
+        if(annots$tstart[i]<=currend+gap){
+            # same call continues
+            currend = max(currend, annots$tend[i])
+        } else {
+            # end prev call, start a new one
+            # (callID is just the timestamp now, could change it)
+            callID = as.character(annots$tstart[i])
+            currend = annots$tend[i]
+        }
+        # In both cases, a new row is created in output
+        # (to add a new recorder/piece of the same call,
+        # or a new call)
+        output$id[i] = callID
+    }
+    # Note that this could all be vectorized w/ cummax if speed actually becomes
+    # a problem.
+
+    # Drop duplicates, i.e. pieces of the same call:
+    # (calls like [1,3] and [3,4] on the same rec were both included so far)
+    output = unique(output)
+
+    # Prepare for create.capt:
+    output$session = 1  # session parameter, could develop
+    output$occ = 1  # occasion parameter, ignored in ascr
+    # output$recid = ??  # TODO come up with a recorder numbering
+    output = output[,c("session", "id", "occ", "rec")]
+    # TODO should we call create.capt here?
+    return(output)
+}
+
+
+# TODO could actually add a separate function to merge call pieces.
+# That would allow merging within each recorder, while the function
+# above merges across recorders as well.
+# annots_to_presabs <- function(annots, occasiongap="8hr"){
+#     recs = unique(annots$rec)
+#     # Recorder names may be modified to create acceptable column names
+#     if(any(recs!=make.names(recs, unique=T))){
+#         warning("Recorder names were modified to match R column name requirements")
+#         annots$rec = make.names(annots$rec, unique=T)
+#     }
+#
+#     # Convert into 0/1 by second
+#     for(r in 1:nrow(annots)){
+#         day = annots$relday[r]+1
+#         rec = annots$rec[r]
+#         # Determine the start of the current occasion
+#         daystart = ... # TODO determine
+#         callstart = floor(annots$tstart[r]-daystart)
+#         callend = ceiling(annots$tend[r]-daystart)
+#         presence[[day]][callstart:callend, rec] = 1
+#     }
+#
+#     # Flatten over days into a single df
+#     presence = bind_rows(presence)
+#     return(presence)
+# }
+
+
+#' Visualize annotation times
+#'
+#' Plots the provided timestamps for a quick visual overview, separating by species and recorders.
+#'
+#' @param annots A dataframe containing at least `tstart` and `tend` columns.
+#'   The annotations will be shown as line segments covering `[tstart; tend]`.
+#'   These columns must be POSIXt timestamps.
+#'   Columns `rec` and/or `species`, if present and containing more than one unique value,
+#'   will be used to spread out the timestamps along the Y axis. AviaNZ annotations
+#'   can be read into this form directly with [readAnnots()] or [readAnnotsFile()].
+#' @param days,hours Optional, numeric vectors. If specified, will only plot annotations
+#'   starting within this(these) day(s) of the month or hour(s).
+#'   Typically, only several hours of data can be usefully shown on this type of plot,
+#'   as afterwards calls become too short and dense to distinguish. These parameters
+#'   are provided as a quick way to inspect the data in parts.
+#'
+#' @return A ggplot plot object. Such plots can be modified with the `+` operator;
+#'   see [ggplot2] documentation for details.
+#' @export
+#'
+#' @examples
+#' annotdir = system.file("extdata", package="avianz2r", mustWork=TRUE)
+#' df <- readAnnots(annotdir)
+#' plot_annots(df, hours=1)
+#' # modifying the plot to split off custom time periods as rows:
+#' library(ggplot2)
+#' library(lubridate)
+#' plot_annots(df[df$rec=="recA",]) +
+#'   facet_wrap(~minute(tstart), nrow=2, scales="free") +
+#'   scale_x_datetime(date_breaks="10 sec", date_minor_breaks="1 sec", date_label="%M.%S")
+plot_annots <- function(annots, days=NULL, hours=NULL){
+    if(!is.data.frame(annots) | !"tstart" %in% colnames(annots) | !"tend" %in% colnames(annots)){
+        stop("Data malformed, must be a dataframe with 'rec', 'tstart' and 'tend' columns.")
+    }
+    if(!lubridate::is.POSIXt(annots$tstart) | !lubridate::is.POSIXt(annots$tend)){
+        stop("Data malformed, timestamps must be in POSIXct or POSIXlt format.")
+    }
+
+    if(!is.null(days)){
+        annots = annots[which(lubridate::day(annots$tstart) %in% days),]
+    }
+    if(!is.null(hours)){
+        annots = annots[which(lubridate::hour(annots$tstart) %in% hours),]
+    }
+
+    # Determine Y aesthetic: by species, recorders, or both, depending
+    # on what has variety.
+    byspecies = byrec = FALSE
+    if("species" %in% colnames(annots)){
+        if(length(unique(annots$species))>1){
+            byspecies=TRUE
+        }
+    }
+    if("rec" %in% colnames(annots)){
+        if(length(unique(annots$rec))>1){
+            byrec=TRUE
+        }
+    }
+    if(byspecies & byrec){
+        annots$y = paste(annots$rec, annots$species, sep="/")
+    } else if(byspecies){
+        annots$y = annots$species
+    } else if(byrec){
+        annots$y = annots$rec
+    } else {
+        annots$y = "calls"  # dummy, just to have all marks at same y
+    }
+
+    totalsec = diff(range(annots$tstart))
+    # Some heuristics to choose appropriate breaks,
+    # because ggplot2::scale_*_datetime for some reason only accepts
+    # fixed size breaks.
+    # Note also that time periods must be in cut.POSIXt format.
+    if(totalsec<lubridate::minutes(3)){
+        date_breaks="30 sec"
+        date_minor_breaks="5 sec"
+    } else if(totalsec<lubridate::minutes(10)){
+        date_breaks="1 min"
+        date_minor_breaks="10 sec"
+    } else if(totalsec<lubridate::hours(2)){
+        date_breaks="10 min"
+        date_minor_breaks="2 min"
+    } else if(totalsec<lubridate::hours(12)){
+        date_breaks="1 hour"
+        date_minor_breaks="10 min"
+    } else {
+        date_breaks="6 hour"
+        date_minor_breaks="1 hour"
+    }
+
+    p = ggplot2::ggplot(annots) +
+        ggplot2::geom_segment(ggplot2::aes(x=tstart, xend=tend, y=y, yend=y),
+                              size=5, col="red") +
+        # facet_wrap(~quarter, scales="free_x", nrow=4) +
+        ggplot2::scale_x_datetime(date_breaks=date_breaks, date_minor_breaks=date_minor_breaks,
+                                  date_labels="%H:%M:%S",    # dates are ignored, but understood to be naturally
+                                  expand=expansion(add=10),  # 10 second additive expansion
+                                  name=NULL) +
+        ggplot2::ylab(NULL) +
+        ggplot2::theme_minimal() + ggplot2::theme(panel.grid.major.y = ggplot2::element_blank(),
+                                strip.background = ggplot2::element_blank(),
+                                strip.text = ggplot2::element_blank())
+    return(p)
+}
+
+# TODO sort out the check() fails here

@@ -30,10 +30,10 @@ Higher-level directory structure, such as the \code{site1} here, are not importa
 \item{time.formats}{All permissible timestamp formats for the files, in \code{\link[=strptime]{strptime()}}
 format specification.}
 
-\item{exact}{If \code{FALSE}, a more sophisticated process of resolving timestamps will
-be applied, which might help when a mixture of formats is present.
-See \code{\link[lubridate:parse_date_time]{lubridate::parse_date_time()}} for details. Use with care, as timestamps
-are critical for subsequent handling -- in case of any suspicious outputs,
+\item{exact}{Passed to \code{\link[lubridate:parse_date_time]{lubridate::parse_date_time()}}. If \code{FALSE}, timestamps will be
+resolved by a more sophisticated process, which might help when a mixture of formats
+is present. See \code{\link[lubridate:parse_date_time]{lubridate::parse_date_time()}} for details. Use with care, as
+timestamps are critical for subsequent handling -- in case of any suspicious outputs,
 a safer solution may be to separate the data into subdirectories by format,
 and load each separately.}
 }
