@@ -61,8 +61,8 @@ lag_clocks <- function(annots, lags){
 
 #' Convert annotations to a call history
 #'
-#' Converts a dataframe of timestamped annotations into a shape compatible
-#'   with [ascr::create.capt()].
+#' Converts a dataframe of annotation timestamps into call captures and recaptures,
+#'   for use in inference models such as acoustic SCR.
 #'
 #' Acoustic SCR requires identifying which detections in a survey represent
 #'   re-captures of the same cue. This function does that simply by using
@@ -71,7 +71,7 @@ lag_clocks <- function(annots, lags){
 #'   shared call ID. Note that this will merge both recaptures across recorders,
 #'   and also annotations within each recorder, such as when several annotations
 #'   are produced for the same call.
-#'   Note that any further annotation details (call type, species) will be ignored,
+#'   Any further annotation details (call type, species) will be ignored,
 #'   i.e. calls labelled as different species, overlapping in time, will still be
 #'   merged. If you wish to use such information, split the data by the groups yourself
 #'   and apply this function to each separately.
@@ -80,6 +80,10 @@ lag_clocks <- function(annots, lags){
 #'   and a `rec` column with recorder IDs. The timestamp columns are typically
 #'   numeric or POSIXt. AviaNZ annotations can be read into
 #'   this form directly with [readAnnots()] or [readAnnotsFile()].
+#'   Auxiliary columns appropriate for [ascr::create.capt()] (`bearing`, `dist`, `ss`,
+#'   `toa`), if included, will be kept, although not merged cleverly -- if multiple
+#'   timestamps on a single recorder are merged into one capture, the
+#'   measures of the first of these fragments will be assigned to it.
 #' @param gap A number in the same units as `tstart,tend`.
 #'   Annotations that are separated by this much or more will be merged into
 #'   a single call. Default 0 merges any annotations that overlap or touch;
@@ -88,8 +92,12 @@ lag_clocks <- function(annots, lags){
 #'   will only merge annotations that overlap by at least `gap` time units, which
 #'   could help avoid falsely merging distinct calls if they occur frequently.
 #'
-#' @return A dataframe where... ??? TODO describe exactly the columns
-#'   Recaptures of the same call will be assigned the same ID.
+#' @return A dataframe containing recaptures of each call in long form:
+#'   columns `id` (assigned call ID string, typically the start of the earliest
+#'   timestamp included in that call) and `rec` (recorder ID on which this
+#'   capture or recapture was registered) will always be present,
+#'   as well as any auxiliary information in the input that is compatible with
+#'   the `ascr` package.
 #' @export
 #'
 #' @examples
@@ -108,8 +116,8 @@ annots_to_calls <- function(annots, gap=0){
     if("species" %in% colnames(annots)){
         if(length(unique(annots$species))>1){
             warning(paste("Multiple species annotations detected. Note that species labels",
-                          " will be ignored when merging the annotations into recaptures.",
-                          " Filter by species and apply this function separately if this is not desired."))
+                          "will be ignored when merging the annotations into recaptures.",
+                          "Filter by species and apply this function separately if this is not desired."))
         }
     }
 
@@ -129,6 +137,12 @@ annots_to_calls <- function(annots, gap=0){
     # and some duplicates (call pieces for the same recorder)
     # will be removed later
     output = data.frame(id=0, rec=annots$rec)
+    # Copy over any auxiliary info useful for capt
+    for(auxcol in c("bearing", "dist", "ss", "toa")){
+        if(auxcol %in% colnames(annots)){
+            output[,auxcol] = annots[,auxcol]
+        }
+    }
 
     # Group overlapping annotations into calls:
     # (doesn't actually merge, just assigns appropriate callIDs
@@ -154,11 +168,8 @@ annots_to_calls <- function(annots, gap=0){
 
     # Drop duplicates, i.e. pieces of the same call:
     # (calls like [1,3] and [3,4] on the same rec were both included so far)
-    output = unique(output)
+    output = output[!duplicated(output[,1:2]),]
 
-    # Prepare for create.capt:
-    output = output[,c("session", "id", "rec")]
-    # TODO ensure other aux info is not dropped
     return(output)
 }
 
@@ -191,38 +202,60 @@ annots_to_calls <- function(annots, gap=0){
 #     return(presence)
 # }
 
-# TODO grouped merging (pass groups as argument)
+# TODO non-overlapping group merging (pass groups as argument)
 
 # TODO convert to 0-1 for binary concordance metrics?
 
 
-#' Title
+#' Final formatting of call history for ascr
 #'
-#' @param calls
-#' @param gpspos
-#' @param survey.recs
+#' Makes some minor formatting changes to allow using a call history in
+#' [ascr::create.capt()].
+#'
+#' @param calls A call history dataframe with columns `id` (arbitrary ID of each
+#'   call) and `rec` (recorder ID on which this capture/recapture was
+#'   registered). Auxiliary info may be provided in columns `bearing`, `dist`,
+#'   `ss`, `toa`.
+#' @param gpspos A dataframe with the recorder locations: columns `rec`, `east`
+#'   and `north` with recorder ID, eastings and northings. `rec` is used for
+#'   matching with `calls` and creating a new, numeric recorder ID. Coordinates
+#'   will be unchanged, so you should prepare them as for [ascr::fit.ascr()]. In
+#'   principle any system is suitable; we recommend using [rgdal::spTransform()]
+#'   to project the collected GPS data into UTM or similar projections, so that
+#'   the inputs are meters easting or northing, for meaningful interpretation of
+#'   the results.
+#' @param survey.recs Optional: a vector of recorder IDs from `rec` to include.
+#'   Defaults to `NULL` = include all.
+#'   For example, it allows to conveniently exclude any recorders that did not
+#'   work on a particular occasion without editing the location data.
 #'
 #' @return A named list with `calls` and `traps` elements which can be directly
-#'   used in [ascr::create.capt()]. The main difference from inputs is that `calls`
-#'   will have ... TODO
+#'   used in [ascr::create.capt()]. The main difference from the inputs is that
+#'   `calls` will have a numeric recorder ID, pointing to rows in `traps`,
+#'   and dummy columns for session and occasion, while `traps` will be a matrix
+#'   without any recorder ID column.
 #' @export
 #'
 #' @examples
 #'
-#' # Recorder positions in eastings-northings (preferrably in meters).
-#' # You will likely want to project these from GPS, e.g. using rgdal::spTransform
-#' gpspos = data.frame(rec=c("recA", "recB"),
+#' # Recorder positions in eastings-northings:
+#' gpspos = data.frame(rec=c("rec1", "rec2"),
 #'                     east=c(-50, 50),
 #'                     north=c(0, 175))
 #'
-#' # format calls and traps appropriately
-#' l = prepare_capt()
+#' # Call history, from annotations:
+#' annots =data.frame(rec=c("rec1", "rec1", "rec2", "rec2"),
+#'   tstart=c(0.0, 5.5, 1.5, 9), tend=c(5.0, 6.5, 6.0, 13))
+#' calls = annots_to_calls(annots)
+#' l = prepare_capt(calls, gpspos)
 #'
 #' # Prepare the actual capt object and run acoustic SCR
+#' \dontrun{
 #' library(ascr)
 #' capt = ascr::create.capt(l$calls, traps=l$traps)
 #' mask = ascr::create.mask(traps, buffer=700)
 #' cr = ascr::fit.ascr(capt, traps, mask)
+#' }
 prepare_capt <- function(calls, gpspos, survey.recs=NULL){
     # Input checks
     if(!is.data.frame(calls) | !"rec" %in% colnames(calls) |
@@ -242,7 +275,9 @@ prepare_capt <- function(calls, gpspos, survey.recs=NULL){
             stop("Some of the specified survey recorders not present in the position data.")
         }
         gpspos = gpspos[which(gpspos$rec %in% survey.recs),]
-        if(nrow(gpspos)==0){
+        calls = calls[which(calls$rec %in% survey.recs),]
+
+        if(nrow(gpspos)==0 | nrow(calls)==0){
             stop("All recorders dropped. Check if survey.recs is specified correctly.")
         }
     }

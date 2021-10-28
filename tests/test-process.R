@@ -22,3 +22,16 @@ stopifnot(all.equal(dflagged$tend, reftend))
 # all other columns must be unchanged
 stopifnot(all.equal(df3[,-c(1,2)],
                     dflagged[,-c(1,2)]))
+
+#  ----------------
+
+annots = data.frame(rec=c("rec1", "rec1", "rec2", "rec2"),
+  tstart=c(0.0, 5.5, 1.5, 9), tend=c(5.0, 6.5, 6.0, 13),
+  dist=c(100, 75, 20, 66))
+
+callsref = data.frame(id=c("0","0","9"), rec=c("rec1", "rec2", "rec2"),
+                       dist=c(100,20,66))
+
+## merge into two unique calls + 1 recapture:
+calls = annots_to_calls(annots, gap=0)
+stopifnot(all.equal(calls, callsref, check.attributes=F))
