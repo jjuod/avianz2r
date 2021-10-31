@@ -1,13 +1,13 @@
 Package: avianz2r
 Title: Reading and Processing of AviaNZ Annotations in R
-Version: 0.1.0
+Version: 0.1.1
 Authors@R: 
     person(given = "Julius",
            family = "Juodakis",
            role = c("aut", "cre"),
            email = "j.juodakis@gmail.com",
            comment = c(ORCID = "0000-0001-5600-974X"))
-Description: TODO What the package does (one paragraph).
+Description: Functions for reading AviaNZ-format annotations into R, doing simple processing, and preparing them for acoustic SCR.
 License: GPL (>= 3)
 Encoding: UTF-8
 LazyData: false
@@ -21,4 +21,5 @@ Imports:
     lubridate (>= 1.7.10),
     magrittr,
     rjson,
+    rlang,
     tidyr (>= 1.1.3)

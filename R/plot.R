@@ -89,9 +89,9 @@ plot_annots <- function(annots, days=NULL, hours=NULL){
     }
 
     p = ggplot2::ggplot(annots) +
-        ggplot2::geom_segment(ggplot2::aes(x=tstart, xend=tend, y=y, yend=y),
+        ggplot2::geom_segment(ggplot2::aes(x=.data$tstart, xend=.data$tend,
+                                           y=.data$y, yend=.data$y),
                               size=5, col="red") +
-        # facet_wrap(~quarter, scales="free_x", nrow=4) +
         ggplot2::scale_x_datetime(date_breaks=date_breaks, date_minor_breaks=date_minor_breaks,
                                   date_labels="%H:%M:%S",    # dates are ignored, but understood to be naturally
                                   expand=ggplot2::expansion(add=10),  # 10 second additive expansion

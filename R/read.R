@@ -26,7 +26,7 @@ readAnnotsFile <- function(file){
     a = rjson::fromJSON(file=file)
     if(length(a)==0){
         # In case AviaNZ creates empty .data somehow.
-        warning(paste("No lines found in file", file))
+        warning(txtmsg("No lines found in file", file))
         return(a)
     }
 
@@ -65,8 +65,6 @@ readAnnotsFile <- function(file){
     a = tidyr::unnest_longer(a, label)
     # 2. separate out label components (sp. name, certainty, CT...)
     a = tidyr::unnest_wider(a, label)
-
-    # TODO note that each file might create unique optional columns (calltype etc)
 
     return(a)
 }
@@ -199,7 +197,6 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
     as$tend = as$ftime + as$tend
 
     # TODO maybe drop ftime afterwards?
-    # TODO test if everything works w/ both stringsAsFactors
 
     message(sprintf("Loaded %d annotations from %d recorders", nrow(as), length(unique(as$rec))))
 

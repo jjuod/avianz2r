@@ -4,7 +4,7 @@
 \alias{annots_to_calls}
 \title{Convert annotations to a call history}
 \usage{
-annots_to_calls(annots, gap = 0)
+annots_to_calls(annots, gap = 0, groups = NULL)
 }
 \arguments{
 \item{annots}{A dataframe containing at least \code{tstart} and \code{tend} columns,
@@ -23,6 +23,12 @@ setting it larger is useful if the calls are often detected as multiple
 annotations which should be merged into a single unit. Setting it below 0
 will only merge annotations that overlap by at least \code{gap} time units, which
 could help avoid falsely merging distinct calls if they occur frequently.}
+
+\item{groups}{A list of vectors containing recorder IDs. Each of these vectors
+will be processed separately (i.e. calls will not be merged across
+these groups even if they coincide in time). This is useful for defining
+non-overlapping recorder groups, to avoid false positive recaptures.
+See examples.}
 }
 \value{
 A dataframe containing recaptures of each call in long form:
@@ -58,4 +64,13 @@ annots <- data.frame(rec=c("rec1", "rec1", "rec2", "rec2"),
 annots_to_calls(annots, gap=0)
 ## or we can separate out the short annotation in rec1 as another call:
 annots_to_calls(annots, gap=-1)
+
+## example of using the groups argument:
+## say there is a third recorder, but we know that it was too far
+## to produce any true recaptures with the others (so any overlaps are
+## just coincidences.)
+## We can still use it in SCR, but we do not wish to merge its
+## annotations, so we define it as a separate group here:
+annots <- rbind(annots, data.frame(rec="rec3", tstart=3, tend=5))
+annots_to_calls(annots, groups=list(c("rec1", "rec2"), "rec3"))
 }

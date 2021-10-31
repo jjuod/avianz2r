@@ -41,10 +41,10 @@ lag_clocks <- function(annots, lags){
     not_in_lags = setdiff(annots$rec, lags$rec)
     not_in_data = setdiff(lags$rec, annots$rec)
     if(!all(annots$rec %in% lags$rec)){
-        stop(paste("Clock shifts missing for some recorders:", not_in_lags))
+        stop(txtmsg("Clock shifts missing for some recorders:", not_in_lags))
     }
     if(length(not_in_data)>0){
-        warning(paste("These recorders were not found in the data:", not_in_data))
+        warning(txtmsg("These recorders were not found in the data:", not_in_data))
     }
     if(anyDuplicated(lags$rec)){
         stop("Only one lag can be provided for each recorder")
@@ -91,6 +91,11 @@ lag_clocks <- function(annots, lags){
 #'   annotations which should be merged into a single unit. Setting it below 0
 #'   will only merge annotations that overlap by at least `gap` time units, which
 #'   could help avoid falsely merging distinct calls if they occur frequently.
+#' @param groups A list of vectors containing recorder IDs. Each of these vectors
+#'   will be processed separately (i.e. calls will not be merged across
+#'   these groups even if they coincide in time). This is useful for defining
+#'   non-overlapping recorder groups, to avoid false positive recaptures.
+#'   See examples.
 #'
 #' @return A dataframe containing recaptures of each call in long form:
 #'   columns `id` (assigned call ID string, typically the start of the earliest
@@ -109,7 +114,16 @@ lag_clocks <- function(annots, lags){
 #' annots_to_calls(annots, gap=0)
 #' ## or we can separate out the short annotation in rec1 as another call:
 #' annots_to_calls(annots, gap=-1)
-annots_to_calls <- function(annots, gap=0){
+#'
+#' ## example of using the groups argument:
+#' ## say there is a third recorder, but we know that it was too far
+#' ## to produce any true recaptures with the others (so any overlaps are
+#' ## just coincidences.)
+#' ## We can still use it in SCR, but we do not wish to merge its
+#' ## annotations, so we define it as a separate group here:
+#' annots <- rbind(annots, data.frame(rec="rec3", tstart=3, tend=5))
+#' annots_to_calls(annots, groups=list(c("rec1", "rec2"), "rec3"))
+annots_to_calls <- function(annots, gap=0, groups=NULL){
     # Expect all annotations from the same species.
     # I don't see why anyone would analyze multiple species together,
     # but it doesn't really break anything for this, so just warn.
@@ -131,6 +145,43 @@ annots_to_calls <- function(annots, gap=0){
         stop("Gap must be a single number.")
     }
 
+    if(!is.null(groups)){
+        data_recs = unique(annots$rec)
+        group_recs = unlist(groups)
+        if(!is.list(groups)){
+            stop("Groups must be NULL or a list of recorder name vectors.")
+        }
+        if(any(duplicated(group_recs) | !group_recs %in% data_recs)){
+            stop("Recorders specified in groups must be unique and found in the data.")
+        }
+        not_in_groups = setdiff(data_recs, group_recs)
+        if(length(not_in_groups)>0){
+            warning(txtmsg("The following recorders were not found in groups",
+                          "and will be excluded:", not_in_groups))
+        }
+    }
+
+    # Given no groups:
+    if(is.null(groups) | (is.list(groups) & length(groups)==1)){
+        output = annots_to_calls_1group(annots, gap)
+    } else {
+        output = list()
+        for(grix in seq_along(groups)){
+            gr = groups[[grix]]
+            gr_annots = annots[annots$rec %in% gr,]
+            gr_output = annots_to_calls_1group(gr_annots, gap)
+            gr_output$id = paste(grix, gr_output$id, sep="_")
+            output[[length(output)+1]] = gr_output
+        }
+        output = as.data.frame(dplyr::bind_rows(output))
+    }
+
+    return(output)
+}
+
+
+# Internal function for merging annotations within a single group.
+annots_to_calls_1group <- function(annots, gap=0){
     annots = annots[order(annots$tstart),]
 
     # The output at first will have 1 row per each input row,
@@ -174,7 +225,6 @@ annots_to_calls <- function(annots, gap=0){
 }
 
 
-
 # TODO could actually add a separate function to merge call pieces.
 # That would allow merging within each recorder, while the function
 # above merges across recorders as well.
@@ -202,7 +252,6 @@ annots_to_calls <- function(annots, gap=0){
 #     return(presence)
 # }
 
-# TODO non-overlapping group merging (pass groups as argument)
 
 # TODO convert to 0-1 for binary concordance metrics?
 
@@ -289,10 +338,10 @@ prepare_capt <- function(calls, gpspos, survey.recs=NULL){
     not_in_gpspos = setdiff(calls$rec, gpspos$rec)
     not_in_calls = setdiff(gpspos$rec, calls$rec)
     if(length(not_in_gpspos)>0){
-        warning(paste("Dropping these recorders for which no positions provided:", not_in_gpspos))
+        warning(txtmsg("Dropping these recorders for which no positions provided:", not_in_gpspos))
     }
     if(length(not_in_calls)>0){
-        warning(paste("No calls detected for these recorders:", not_in_calls))
+        warning(txtmsg("No calls detected for these recorders:", not_in_calls))
     }
 
     # create a numeric index column, in case rec names are characters
@@ -319,7 +368,7 @@ prepare_capt <- function(calls, gpspos, survey.recs=NULL){
                       "east", "north", "rec") # columns that we add
     cols_unknown = setdiff(cols_rest, cols_accepted)
     if(length(cols_unknown)>0){
-        warning(paste("The following columns will be ignored by ascr:",
+        warning(txtmsg("The following columns will be ignored by ascr:",
                       cols_unknown))
     }
 

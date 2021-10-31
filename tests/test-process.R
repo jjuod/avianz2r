@@ -35,3 +35,11 @@ callsref = data.frame(id=c("0","0","9"), rec=c("rec1", "rec2", "rec2"),
 ## merge into two unique calls + 1 recapture:
 calls = annots_to_calls(annots, gap=0)
 stopifnot(all.equal(calls, callsref, check.attributes=F))
+
+## try out groups:
+# should be identical to above:
+calls2 = annots_to_calls(annots, groups=list(c("rec1", "rec2")))
+stopifnot(all.equal(calls2, calls))
+# should not merge across the recorders, only within:
+callssep = annots_to_calls(annots, groups=list("rec1", "rec2"))
+stopifnot(nrow(callssep)>nrow(calls))
