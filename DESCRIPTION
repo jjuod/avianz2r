@@ -23,3 +23,7 @@ Imports:
     rjson,
     rlang,
     tidyr (>= 1.1.3)
+Suggests: 
+    rmarkdown,
+    knitr
+VignetteBuilder: knitr

@@ -137,7 +137,8 @@ loop_over_files <- function(d, filenames, alldts, recnames){
 #' df <- readAnnots(annotdir)
 readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), exact=TRUE){
     # Scan for wav or bmp annotations
-    filenames = list.files(dir, pattern=".(wav|bmp).data$", recursive=TRUE)
+    filenames = list.files(dir, pattern=".(wav|bmp).data$", recursive=TRUE,
+                           ignore.case=T)
     if(length(filenames)==0) stop(paste("no .data files found in directory", dir))
 
     # Parse file names
@@ -151,7 +152,8 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
     if(all(sapply(fn_parts, length)==3)){
         message("*** Attempting filename parsing in REC_DATE_TIME format ***")
         # Merge the last two parts into a timestamp
-        tstamps = sapply(fn_parts, function(x) paste(x[2], sub(".(wav|bmp).data", "", x[3]), sep="_"))
+        tstamps = sapply(fn_parts, function(x) paste(x[2],
+                                    sub(".(wav|bmp).data", "", x[3], ignore.case=T), sep="_"))
         # Attempt to parse timestamps. We pretend they are in POSIXct,
         # to avoid DST gaps which are not accounted by field sensors etc.
         alldts = lubridate::parse_date_time(tstamps, time.formats, exact=exact, tz="UTC")

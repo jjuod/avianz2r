@@ -1,0 +1,55 @@
+---
+title: "Working with AviaNZ detections in R"
+author: Julius Juodakis
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{avianz2r}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+This vignette will present a simple acoustic monitoring workflow, based around using the AviaNZ software and this package.
+The workflow goes from passive acoustic monitoring data, which is automatically labelled by AviaNZ, processed by this package, and then passed to a spatial capture-recapture model, to produce an estimate of calling animal density.
+
+As each study has unique issues and opportunities, you will likely want to adapt these methods. The code and examples here are intended as a minimal skeleton to build your own processing pipeline around it, not as a final and correct way to analyse such data.
+Some alternative processing ideas will be mentioned as we go.
+
+
+## Field data
+
+We assume that the input is passive acoustic monitoring data collected from a set of recorders that have at least partially overlapping detection areas.
+The required input data will be:  
+1. the .wav files produced by these recorders. Recording start time will be read from the file name, so they must be named either as `RECORDER_DATE_TIME.wav` (e.g. `B1_20180731_193000.wav`), or `DATE_TIME.wav` in directories `RECORDER/`. Devices such as Wildlife Acoustics SM4, Open Acoustic Devices AudioMoth, NZ Department of Conservation AR4 follow this naming convention. Recorder IDs will be used to merge with GPS data. Various timestamp formats are acceptable, as long as they are in the file name.  
+2. the GPS positions of the recorders.  
+
+This package, like AviaNZ, will analyse all files in a single directory, including any subdirectories
+Thus, for easier processing, we advise to store each survey's or project's files in a separate directory. Any subdirectories, if present, are only used to determine the recorder ID, if not provided in the filename.
+E.g. suitable structures could be `PROJECT/DAY/RECORDER_DATE_TIME.wav` or `PROJECT/RECORDER/DATE_TIME.wav`; everything in the `PROJECT/` directory will be analysed, while the `DAY/` subdirectory is there only for user convenience and its name is not used by the software.
+
+If files are split across several directories, the analysis and loading of files will need to be repeated for each.
+
+## Automatic detection of calls with AviaNZ
+
+AviaNZ software is specifically designed to detect target sound events in passive acoustic monitoring data.
+It is available from [www.avianz.net](www.avianz.net); follow the download and installation instructions there.
+
+Use AviaNZ `Batch Processing` mode to process the recordings. This requires choosing the directory containing all files to be processed (e.g. `PROJECT/` above) and the recognizer for your species.
+Several recognizers are included in AviaNZ; if your target species is not included, follow the AviaNZ manual to prepare your own recognizers.
+
+The analysis will produce one `.data` file (AviaNZ-format JSON) for each sound file, containing the detected event timestamps and some additional information about them, such as the detector name. The events may be calls, syllables or other cues, depending on your chosen recognizer.
+
+## Preparing the annotations for inference models
+
+
+
+
+```{r setup}
+library(avianz2r)
+```
