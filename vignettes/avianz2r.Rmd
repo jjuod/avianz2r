@@ -15,7 +15,7 @@ knitr::opts_chunk$set(
 )
 ```
 
-This vignette will present a simple acoustic monitoring workflow, based around using the AviaNZ software and this package.
+This vignette will present a simple acoustic monitoring workflow, based around using the AviaNZ software and this package (`avianz2r`).
 The workflow goes from passive acoustic monitoring data, which is automatically labelled by AviaNZ, processed by this package, and then passed to a spatial capture-recapture model, to produce an estimate of calling animal density.
 
 As each study has unique issues and opportunities, you will likely want to adapt these methods. The code and examples here are intended as a minimal skeleton to build your own processing pipeline around it, not as a final and correct way to analyse such data.
@@ -26,14 +26,15 @@ Some alternative processing ideas will be mentioned as we go.
 
 We assume that the input is passive acoustic monitoring data collected from a set of recorders that have at least partially overlapping detection areas.
 The required input data will be:  
-1. the .wav files produced by these recorders. Recording start time will be read from the file name, so they must be named either as `RECORDER_DATE_TIME.wav` (e.g. `B1_20180731_193000.wav`), or `DATE_TIME.wav` in directories `RECORDER/`. Devices such as Wildlife Acoustics SM4, Open Acoustic Devices AudioMoth, NZ Department of Conservation AR4 follow this naming convention. Recorder IDs will be used to merge with GPS data. Various timestamp formats are acceptable, as long as they are in the file name.  
-2. the GPS positions of the recorders.  
 
-This package, like AviaNZ, will analyse all files in a single directory, including any subdirectories
+1. WAV files produced by these recorders. Recording start time will be read from the file name, so they must be named either as `RECORDER_DATE_TIME.wav` (e.g. `B1_20180731_193000.wav`), or `DATE_TIME.wav` in directories `RECORDER/`. Devices such as Wildlife Acoustics SM4, Open Acoustic Devices AudioMoth, NZ Department of Conservation AR4 follow this naming convention. `RECORDER` is the ID string that will be used to merge with GPS data. Various timestamp formats are acceptable, as long as they are in the file name.  
+2. The GPS positions of the recorders.  
+
+This package, like AviaNZ, will analyse all files in a single directory, including any subdirectories.
 Thus, for easier processing, we advise to store each survey's or project's files in a separate directory. Any subdirectories, if present, are only used to determine the recorder ID, if not provided in the filename.
-E.g. suitable structures could be `PROJECT/DAY/RECORDER_DATE_TIME.wav` or `PROJECT/RECORDER/DATE_TIME.wav`; everything in the `PROJECT/` directory will be analysed, while the `DAY/` subdirectory is there only for user convenience and its name is not used by the software.
+E.g. suitable structures could be `PROJECT/DAY/RECORDER_DATE_TIME.wav` or `PROJECT/RECORDER/DATE_TIME.wav`; analysis is run on the `PROJECT/` directory, while the `DAY/` subdirectory is there only for user convenience and its name is not used by the software.
 
-If files are split across several directories, the analysis and loading of files will need to be repeated for each.
+If files are split across several directories, the analysis and loading of files described here would have to be repeated for each, and the loaded annotations then merged.
 
 ## Automatic detection of calls with AviaNZ
 
@@ -47,9 +48,137 @@ The analysis will produce one `.data` file (AviaNZ-format JSON) for each sound f
 
 ## Preparing the annotations for inference models
 
+Typically, some post-processing is required to convert the detections into forms that can be used in ecological models.
+This is the domain of `avianz2r` package: it allows to read the AviaNZ annotations into R, and provides some functions for post-processing and format conversion. Most likely, you will want to customize these steps; the annotations are loaded as an R data frame so that standard R tools can be used to process them.
 
+In this vignette we demonstrate the workflow for an SCR model, based on a capture-recapture history, i.e. a matrix indicating which recorders detected which calls.
+This will require several processing steps:
 
+1. Timestamp adjustment to synchronize clocks across the recorders  
+2. Merging of detections into distinct calls  
+3. Identification of recaptures of the same call in different recorders  
+4. Formatting the data as required by the `ascr` R package, which will be used to fit the model.  
+
+Start by reading the annotations into R:
 
 ```{r setup}
 library(avianz2r)
+annots <- readAnnots(dir="../tests/vign/")
 ```
+
+A plotting function is provided to visualize the timestamps, and other standard R tools can be applied as well:
+
+```{r demoannot, fig.width=5, fig.height=2}
+head(annots)
+nrow(annots)
+all(annots$species=="Bittern")
+table(annots$rec)
+
+plot_annots(annots)
+```
+
+### Timestamp adjustment
+
+Timestamp adjustment will require the user to determine the appropriate time offset that should be applied to each recorder to account for clock drift in the field. This can be done by AviaNZ `CompareCalls.py` utility, which attempts to maximize the total overlap between annotations in pairs of recorders, or manually based on loud events. This step is also essential to verify that the recorder detection ranges do overlap, and most events that match in time are recaptures of the same call. The `CompareCalls.py` utility can also be used to identify non-overlapping groups of recorders; note such cases, as they can be specified later.
+
+The function `lag_clocks` from this package can then apply this offset:
+
+```{r adjustclocks}
+# offsets determined by the user, in seconds:
+clocklags <- data.frame(rec=c("BIT3", "BIT4", "BIT5"),
+                       lag=c(15, 30, 0))
+# adjust the timestamps:
+annots <- lag_clocks(annots, clocklags)
+head(annots)
+```
+
+### From timestamps to capture history of calls
+
+Merging of annotations into calls and identification of recaptures can be done with the `annots_to_calls` function in this package.
+For example, let's say our species calls in bouts in which the calls are separated by less than 3 seconds. Each call is marked separately in AviaNZ, but for SCR we wish to merge them within each bout (to match the SCR cue emission model). 
+The following line does that - annotations on the same recorder that are separated by no more than 3 s are merged into a single call, and annotations simultaneously detected on different recorders (allowing the same time error) are treated as recaptures of the same event and assigned a shared ID:
+
+```{r mergecalls}
+calls <- annots_to_calls(annots, gap=3)
+head(calls)
+
+# see how many events were unique, or captured on two, three, etc. recorders
+table(table(calls$id), dnn=c("captures"))
+```
+
+Allowing at least a small gap is typically useful because AviaNZ may occasionally detect a call in fragments, and calls are rarely so dense that this offset could introduce false recaptures. However you may still want to edit this function, especially if you are using additional information which needs to be treated specially during merging, e.g. direction estimates.
+Note that any non-overlapping groups identified earlier can be specified here via the `groups` argument.
+
+### Formatting for SCR
+Final formatting for SCR is done by the `prepare_capt` function in this package. This is a simple format change and does not introduce new information.
+However, at this stage we also need the recorder GPS positions. Most likely they will be recorded as longitude and latitude, whereas for result interpretability we wish to convert them into meters easting and northing. Such projection can be done in R:
+
+```{r gpsprojection, message=F}
+# read in
+gpspos <- read.table("../tests/vign/recordergps.txt", h=T)
+print(gpspos)
+
+# create a Spatial object and project
+library(rgdal)
+coordinates(gpspos) <- c("longitude", "latitude")
+proj4string(gpspos) <- CRS("+proj=longlat +datum=WGS84")
+gpsposUTM <- spTransform(gpspos, CRS("+proj=utm +zone=60"))   # Note the 60 zone used for New Zealand
+
+# transform back to a dataframe from SpatialPointsDataFrame
+gpsposUTM <- as.data.frame(gpsposUTM)
+colnames(gpsposUTM) <- c("rec", "east", "north")
+
+# mean-center for simpler display and reading
+gpsposUTM$east <- gpsposUTM$east - mean(gpsposUTM$east)
+gpsposUTM$north <- gpsposUTM$north - mean(gpsposUTM$north)
+print(gpsposUTM)
+```
+
+The next function will cast both the call history and GPS data into objects appropriate for the `ascr` package. Do all other processing before this step - the reshaped objects are not human-friendly and will be indexed by row and column positions in `ascr`, so any further processing of these can easily introduce invisible errors.
+
+```{r formatting}
+outlist <- prepare_capt(calls, gpsposUTM)
+outlist$traps
+head(outlist$calls)
+```
+
+## Model fitting
+
+We now proceed to use the acoustic SCR package `ascr`. This package will conduct the final format conversion on the input data, and create the study area grid that is used for numeric integration of the likelihood:
+
+```{r ascr, message=F}
+# devtools::install_github("b-steve/ascr")
+library(ascr)
+# one final format conversion
+capt = create.capt(outlist$calls, traps=outlist$traps)
+
+# set the integration area:
+mask = create.mask(outlist$traps, buffer=700)  # this sets a buffer of 700 m around the recorders
+# if you expect no animals in some areas, e.g. a lake, rgdal functions can be used to crop these out:
+# lake = readOGR("somefile.shp")
+# maskDF = SpatialPoints(mask, proj4string=CRS(proj4string(lake)))
+# maskInLand = is.na(over(maskDF, lake)$fidn)
+# mask = mask[maskInLand,]
+# plot(mask)
+```
+
+We are now ready to fit the final model:
+
+```{r scr}
+cr = fit.ascr(capt, outlist$traps, mask)
+summary(cr)
+
+# example detection - a call captured on 2 of 3 recorders:
+locations(cr, 11, plot.estlocs =T)
+```
+
+The main output of interest here is the call density estimate of `r round(coef(cr)["D"], 3)` calls/ha/survey. The estimated detection area is high for a typical bird survey, as this example dataset had many calls captured on all 3 recorders. 
+
+To convert the call density estimate into more relevant units, provide the `cue.rates` and `survey.length` parameters to `ascr`. Assuming sufficiently random calling positions, these parameters simply rescale the call density estimate. For example, here we assume that the survey took 2 hours and the animals produced on average 1.7 call bouts per hour:
+```{r scr2}
+cr = fit.ascr(capt, outlist$traps, mask, cue.rates=1.7, survey.length=2,
+              hess=TRUE)
+summary(cr)
+```
+
+Leading to a final density estimate of `r round(cr$coefficients["Da"], 3)` animals/ha.

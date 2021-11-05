@@ -62,9 +62,9 @@ readAnnotsFile <- function(file){
 
     # Now, parse the label column:
     # 1. repeat rows if multiple species labels found
-    a = tidyr::unnest_longer(a, label)
+    a = tidyr::unnest_longer(a, .data$label)
     # 2. separate out label components (sp. name, certainty, CT...)
-    a = tidyr::unnest_wider(a, label)
+    a = tidyr::unnest_wider(a, .data$label)
 
     return(a)
 }
@@ -137,6 +137,8 @@ loop_over_files <- function(d, filenames, alldts, recnames){
 #' df <- readAnnots(annotdir)
 readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), exact=TRUE){
     # Scan for wav or bmp annotations
+    print(dir)
+    print(list.files(dir))
     filenames = list.files(dir, pattern=".(wav|bmp).data$", recursive=TRUE,
                            ignore.case=T)
     if(length(filenames)==0) stop(paste("no .data files found in directory", dir))
