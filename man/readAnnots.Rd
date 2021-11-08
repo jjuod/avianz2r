@@ -13,41 +13,45 @@ readAnnots(
 \arguments{
 \item{dir}{Directory path containing AviaNZ annotations ("new-style" JSON format, as
 defined in AviaNZ documentation). Will be explored recursively. File tree and
-naming must follow one of these formats:
+naming should follow one of these formats:
 \itemize{
-\item \code{rec_date_time.wav.data} format. The filename of each \code{.data} file must contain
+\item \code{rec_date_time.wav.data} format. The name of each \code{.data} file must contain
 exactly three underscore-separated components, which will be parsed into
 recorder ID, date and time. These files may be arranged into subdirectories in
 anyway -- this arrangement will be ignored, and only the filename parsed.
-\item \code{rec/date_time.wav.data} format. The filename of each \code{.data} file must contain
+\item \code{rec/date_time.wav.data} format. The name of each \code{.data} file must contain
 exactly two underscore-separated components, which will be parsed into date
 and time. These files must be arranged into subdirectories. The recorder name
 will be determined from the lowest-level subdirectory: so the recorder for
 \verb{projectX/site1/day1/rec2/20010101_001234.wav.data} will be identified as \code{rec2}.
-Higher-level directory structure, such as the \code{site1} here, are not important.
-}}
+Higher-level directory structure, such as the \code{site1} here, is not important.
+}
 
-\item{time.formats}{All permissible timestamp formats for the files, in \code{\link[=strptime]{strptime()}}
-format specification.}
+If neither of these formats match, unparsed filenames and relative annotation times
+will be returned.}
 
-\item{exact}{Passed to \code{\link[lubridate:parse_date_time]{lubridate::parse_date_time()}}. If \code{FALSE}, timestamps will be
+\item{time.formats}{All permissible date-time formats for the filenames, in \code{\link[=strptime]{strptime()}}
+specification. Datetimes that cannot be identified with these will cause an error.}
+
+\item{exact}{Passed to \code{\link[lubridate:parse_date_time]{lubridate::parse_date_time()}}. If \code{FALSE}, file datetimes will be
 resolved by a more sophisticated process, which might help when a mixture of formats
 is present. See \code{\link[lubridate:parse_date_time]{lubridate::parse_date_time()}} for details. Use with care, as
-timestamps are critical for subsequent handling -- in case of any suspicious outputs,
+times are critical for subsequent handling -- in case of any suspicious outputs,
 a safer solution may be to separate the data into subdirectories by format,
 and load each separately.}
 }
 \value{
 A dataframe (namely, tibble) with one row per each species label, and
-at least 5 columns:
+at least 6 columns:
 \itemize{
-\item \code{tstart} and \code{tend} (numeric, annotation position in seconds
-from the file start)
+\item \code{tstart} and \code{tend} (POSIXct, annotation timestamp in "UTC", as described above;
+or numeric, seconds relative to file start, if file times could not be identified)
 \item \code{freqmin} and \code{freqmax} (numeric, frequency bounds in Hz,
 or 0, if not specified)
 \item any further columns from the label, typically \code{species},
 \code{certainty} and \code{filter}
-\item \code{ftime} (POSIXct, starting time of the file)
+\item \code{ftime} (POSIXct, starting time of the file) or \code{fname} (character, the file
+name, if timestamps could not be identified)
 \item \code{rec} (name of the recorder).
 }
 
@@ -57,9 +61,28 @@ different species; these will be parsed into individual rows.
 \description{
 Reads one directory of AviaNZ format .data files into an R dataframe.
 }
+\details{
+A note on timezones: this function assumes that the times in filenames are in UTC,
+even though the recorder clocks are typically set to local time when starting a survey.
+However, most of the devices do not adjust for any time offset changes (i.e. DST) during
+the survey, so they do not exactly follow any real timezone. If you wish to cast
+the timestamps to a particular local time, or incorporate any clock adjustments
+made manually during the survey, simply add the appropriate offset to the timestamps.
+}
 \examples{
 # Read two annotation files from two recorders, stored in a single folder
 # and named in rec_date_time format
 annotdir = system.file("extdata", package="avianz2r", mustWork=TRUE)
 df <- readAnnots(annotdir)
+
+\dontrun{
+# If the filenames do not have timestamps, you can obtain a similar output
+# by attaching the times manually, like this:
+df <- readAnnots(notimestampdir)
+recTimes <- data.frame(ftime=lubridate::ymd_hms(c("20210701_053000", "20210701_194500")),
+                       fname=c("morning.wav", "evening.wav"))
+df <- dplyr::left_join(df, recTimes, by="fname")
+df$tstart <- df$tstart + df$ftime
+df$tend <- df$tend + df$ftime
+}
 }

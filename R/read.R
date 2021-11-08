@@ -23,15 +23,13 @@
 #' annotfile = system.file("extdata", "recB_230118_023355.wav.data", package="avianz2r", mustWork=TRUE)
 #' df <- readAnnotsFile(annotfile)
 readAnnotsFile <- function(file){
+    # NOTE: assumes "new format" annotations (AviaNZ>=2.0)
     a = rjson::fromJSON(file=file)
     if(length(a)==0){
         # In case AviaNZ creates empty .data somehow.
         warning(txtmsg("No lines found in file", file))
         return(a)
     }
-
-    # TODO adapt to old format as well.
-    # Currently assumes "new format" annotations (AviaNZ>=2.0)
 
     # Drop metadata:
     meta = a[[1]]
@@ -48,6 +46,7 @@ readAnnotsFile <- function(file){
     # Convert JSON-style list to data frame.
     # Fields 1-4 become columns, label becomes a list column
     a = data.frame(do.call(rbind, a))
+    if(nrow(a)==0) return(a)
     if(ncol(a)!=5) stop("Non-standard data format (could not identify 5 columns)")
     colnames(a) = c("tstart", "tend", "freqmin", "freqmax", "label")
     a$tstart = as.numeric(a$tstart)
@@ -92,40 +91,51 @@ loop_over_files <- function(d, filenames, alldts, recnames){
 #'
 #' Reads one directory of AviaNZ format .data files into an R dataframe.
 #'
+#' A note on timezones: this function assumes that the times in filenames are in UTC,
+#'   even though the recorder clocks are typically set to local time when starting a survey.
+#'   However, most of the devices do not adjust for any time offset changes (i.e. DST) during
+#'   the survey, so they do not exactly follow any real timezone. If you wish to cast
+#'   the timestamps to a particular local time, or incorporate any clock adjustments
+#'   made manually during the survey, simply add the appropriate offset to the timestamps.
+#'
 #' @param dir Directory path containing AviaNZ annotations ("new-style" JSON format, as
 #'   defined in AviaNZ documentation). Will be explored recursively. File tree and
-#'   naming must follow one of these formats:
-#'   * `rec_date_time.wav.data` format. The filename of each `.data` file must contain
+#'   naming should follow one of these formats:
+#'   * `rec_date_time.wav.data` format. The name of each `.data` file must contain
 #'     exactly three underscore-separated components, which will be parsed into
 #'     recorder ID, date and time. These files may be arranged into subdirectories in
 #'     anyway -- this arrangement will be ignored, and only the filename parsed.
-#'   * `rec/date_time.wav.data` format. The filename of each `.data` file must contain
+#'   * `rec/date_time.wav.data` format. The name of each `.data` file must contain
 #'     exactly two underscore-separated components, which will be parsed into date
 #'     and time. These files must be arranged into subdirectories. The recorder name
 #'     will be determined from the lowest-level subdirectory: so the recorder for
 #'     `projectX/site1/day1/rec2/20010101_001234.wav.data` will be identified as `rec2`.
-#'     Higher-level directory structure, such as the `site1` here, are not important.
-#' @param time.formats All permissible timestamp formats for the files, in [strptime()]
-#'   format specification.
-#' @param exact Passed to [lubridate::parse_date_time()]. If `FALSE`, timestamps will be
+#'     Higher-level directory structure, such as the `site1` here, is not important.
+#'
+#'   If neither of these formats match, unparsed filenames and relative annotation times
+#'   will be returned.
+#' @param time.formats All permissible date-time formats for the filenames, in [strptime()]
+#'   specification. Datetimes that cannot be identified with these will cause an error.
+#' @param exact Passed to [lubridate::parse_date_time()]. If `FALSE`, file datetimes will be
 #'   resolved by a more sophisticated process, which might help when a mixture of formats
 #'   is present. See [lubridate::parse_date_time()] for details. Use with care, as
-#'   timestamps are critical for subsequent handling -- in case of any suspicious outputs,
+#'   times are critical for subsequent handling -- in case of any suspicious outputs,
 #'   a safer solution may be to separate the data into subdirectories by format,
 #'   and load each separately.
 #'
 #' @return A dataframe (namely, tibble) with one row per each species label, and
-#'   at least 5 columns:
-#'   * `tstart` and `tend` (numeric, annotation position in seconds
-#'   from the file start)
+#'   at least 6 columns:
+#'   * `tstart` and `tend` (POSIXct, annotation timestamp in "UTC", as described above;
+#'   or numeric, seconds relative to file start, if file times could not be identified)
 #'   * `freqmin` and `freqmax` (numeric, frequency bounds in Hz,
 #'   or 0, if not specified)
 #'   * any further columns from the label, typically `species`,
 #'   `certainty` and `filter`
-#'   * `ftime` (POSIXct, starting time of the file)
-#'   * `rec` (name of the recorder).
+#'   * `ftime` (POSIXct, starting time of the file) or `fname` (character, name of the
+#'   audio file, if timestamps could not be identified)
+#'   * `rec` (character, ID of the recorder).
 #'
-#'   Note that an AviaNZ annotation may have multiple labels, corresponding to
+#'   Note that an AviaNZ annotation may have multiple labels on a single timestamp, corresponding to
 #'   different species; these will be parsed into individual rows.
 #'
 #' @export
@@ -135,6 +145,17 @@ loop_over_files <- function(d, filenames, alldts, recnames){
 #' # and named in rec_date_time format
 #' annotdir = system.file("extdata", package="avianz2r", mustWork=TRUE)
 #' df <- readAnnots(annotdir)
+#'
+#' \dontrun{
+#' # If the filenames do not have timestamps, you can obtain a similar output
+#' # by attaching the times manually, like this:
+#' df <- readAnnots(notimestampdir)
+#' recTimes <- data.frame(ftime=lubridate::ymd_hms(c("20210701_053000", "20210701_194500")),
+#'                        fname=c("morning.wav", "evening.wav"))
+#' df <- dplyr::left_join(df, recTimes, by="fname")
+#' df$tstart <- df$tstart + df$ftime
+#' df$tend <- df$tend + df$ftime
+#' }
 readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), exact=TRUE){
     # Scan for wav or bmp annotations
     print(dir)
@@ -148,9 +169,10 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
     # Extracts lowest subdirs
     subdirs = basename(dirname(filenames))
 
-    # TODO currently allowing 3-comp and 2-comp+subdir names.
-    # need no-timestamp fallback
-
+    # 3-comp and 2-comp+subdir names can be parsed fully,
+    # other formats will default to the fallback case,
+    # but will throw error if some parse and some don't:
+    found_tstamps = F
     if(all(sapply(fn_parts, length)==3)){
         message("*** Attempting filename parsing in REC_DATE_TIME format ***")
         # Merge the last two parts into a timestamp
@@ -167,6 +189,7 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
 
         recnames = sapply(fn_parts, "[", 1)
         as = loop_over_files(dir, filenames, alldts, recnames)
+        found_tstamps = T
     } else if(all(sapply(fn_parts, length)==2) &
               all(subdirs!="") & all(subdirs!=".")){
         message("*** Attempting filename parsing in REC/DATE_TIME format ***")
@@ -182,10 +205,11 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
         }
 
         as = loop_over_files(dir, filenames, alldts, subdirs)
+        found_tstamps = T
+    # no-timestamp fallback:
     } else {
-        print(fn_parts)
-        stop(paste("Consistent filename format could not be identifed.\n",
-                    "Check if they are formatted correctly."))
+        warning("No consistent timestamp format could be identified in the filenames.")
+        as = loop_over_files(dir, filenames, sub(".data$", "", filenames), NA)
     }
 
     if(length(as)==0){
@@ -195,12 +219,15 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
 
     as = dplyr::bind_rows(as)
 
-    # Convert timestamp to "absolute" time (pretend-UTC,
-    # i.e. recorder clock time registered as UTC).
-    as$tstart = as$ftime + as$tstart
-    as$tend = as$ftime + as$tend
-
-    # TODO maybe drop ftime afterwards?
+    if (found_tstamps){
+        # Convert timestamp to "absolute" time (pretend-UTC,
+        # i.e. recorder clock time registered as UTC).
+        as$tstart = as$ftime + as$tstart
+        as$tend = as$ftime + as$tend
+    } else {
+        # no timestamp found, so stored values are just names:
+        colnames(as)[colnames(as)=="ftime"] = "fname"
+    }
 
     message(sprintf("Loaded %d annotations from %d recorders", nrow(as), length(unique(as$rec))))
 
