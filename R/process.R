@@ -85,7 +85,7 @@ lag_clocks <- function(annots, lags){
 #'   timestamps on a single recorder are merged into one capture, the
 #'   measures of the first of these fragments will be assigned to it.
 #' @param gap A number in the same units as `tstart,tend`.
-#'   Annotations that are separated by this much or more will be merged into
+#'   Annotations that are separated by this much or less will be merged into
 #'   a single call. Default 0 merges any annotations that overlap or touch;
 #'   setting it larger is useful if the calls are often detected as multiple
 #'   annotations which should be merged into a single unit. Setting it below 0
@@ -135,14 +135,16 @@ annots_to_calls <- function(annots, gap=0, groups=NULL){
         }
     }
 
-    # Importantly, checking if times are actually in UTC,
-    # to minimize any DST gap issues
     if(!is.data.frame(annots) | !"rec" %in% colnames(annots) |
        !"tend" %in% colnames(annots) | !"tstart" %in% colnames(annots)){
         stop("Annotations malformed, must be a dataframe with 'rec', 'tstart' and 'tend' columns")
     }
     if(!is.numeric(gap) | length(gap)>1){
         stop("Gap must be a single number.")
+    }
+    if(lubridate::is.POSIXlt(annots$tstart) | lubridate::is.POSIXlt(annots$tend)){
+        warning(paste("Using local times may give unexpected results if DST shifts fall within",
+                "the survey period. Verify the output carefully or switch to POSIXct."))
     }
 
     if(!is.null(groups)){
@@ -225,35 +227,98 @@ annots_to_calls_1group <- function(annots, gap=0){
 }
 
 
-# TODO could actually add a separate function to merge call pieces.
-# That would allow merging within each recorder, while the function
-# above merges across recorders as well.
-# annots_to_presabs <- function(annots, occasiongap="8hr"){
-#     recs = unique(annots$rec)
-#     # Recorder names may be modified to create acceptable column names
-#     if(any(recs!=make.names(recs, unique=T))){
-#         warning("Recorder names were modified to match R column name requirements")
-#         annots$rec = make.names(annots$rec, unique=T)
-#     }
-#
-#     # Convert into 0/1 by second
-#     for(r in 1:nrow(annots)){
-#         day = annots$relday[r]+1
-#         rec = annots$rec[r]
-#         # Determine the start of the current occasion
-#         daystart = ... # TODO determine
-#         callstart = floor(annots$tstart[r]-daystart)
-#         callend = ceiling(annots$tend[r]-daystart)
-#         presence[[day]][callstart:callend, rec] = 1
-#     }
-#
-#     # Flatten over days into a single df
-#     presence = bind_rows(presence)
-#     return(presence)
-# }
+#' Merge timestamps with small gaps
+#'
+#' Merges annotations separated by at most a chosen time gap within each
+#' recorder.
+#'
+#' This is a replacement for [annots_to_calls()], in case you want to only merge
+#' subsequent annotations within each recorder and not across groups, e.g. for
+#' combining syllables into calls. This is useful if (1) you want a more liberal
+#' gap to be applied for within-recorder merges than for between-recorder
+#' merges, (2) preserving additional call information is needed -- this function
+#' can be modified more easily than [annots_to_calls()].
+#'
+#' @param annots A dataframe containing at least `tstart` and `tend` columns,
+#'   and a `rec` column with recorder IDs. The timestamp columns are typically
+#'   numeric or POSIXt. AviaNZ annotations can be read into this form directly
+#'   with [readAnnots()] or [readAnnotsFile()]. Any additional columns will be
+#'   ignored -- edit this function to add additional merging rules if you wish.
+#' @param gap A number in the same units as `tstart,tend`. Annotations that are
+#'   separated by this much or less will be merged into a single call. I.e. 0
+#'   merges any annotations that overlap or touch; positive `gap` is likely the most
+#'   useful for merging syllables, but it can also be set below 0 to only
+#'   merge annotations that overlap by at least `gap` time units.
+#'
+#' @return A dataframe containing `tstart` and `tend` columns corresponding to the
+#'   timestamps after merging, and `rec` with recorder ID as provided in the input.
+#'
+#' @export
+#'
+#' @examples
+#' ## several detections over 2 recorders:
+#' annots <- data.frame(rec=c("rec1", "rec1", "rec1", "rec2", "rec2"),
+#'   tstart=c(0.0, 3.5, 7.1, 1.5, 5.5), tend=c(3.0, 4.5, 8.1, 6.0, 8.0))
+#' ## merge into 3 unique calls:
+#' merge_syllables(annots, gap=2)
+merge_syllables <- function(annots, gap){
+    # Expect all annotations from the same species.
+    # I don't see why anyone would analyze multiple species together,
+    # but it doesn't really break anything for this, so just warn.
+    if("species" %in% colnames(annots)){
+        if(length(unique(annots$species))>1){
+            warning(paste("Multiple species annotations detected. Note that species labels",
+                          "will be ignored when merging the annotations into recaptures.",
+                          "Filter by species and apply this function separately if this is not desired."))
+        }
+    }
 
+    if(!is.data.frame(annots) | !"rec" %in% colnames(annots) |
+       !"tend" %in% colnames(annots) | !"tstart" %in% colnames(annots)){
+        stop("Annotations malformed, must be a dataframe with 'rec', 'tstart' and 'tend' columns")
+    }
+    if(!is.numeric(gap) | length(gap)>1){
+        stop("Gap must be a single number.")
+    }
+    if(lubridate::is.POSIXlt(annots$tstart) | lubridate::is.POSIXlt(annots$tend)){
+        warning(paste("Using local times may give unexpected results if DST shifts fall within",
+                      "the survey period. Verify the output carefully or switch to POSIXct."))
+    }
 
-# TODO convert to 0-1 for binary concordance metrics?
+    allrecs = unique(annots$rec)
+    output = list()
+    for(r in allrecs){
+        rec_annots = annots[annots$rec==r,]
+        rec_annots = rec_annots[order(rec_annots$tstart),]
+        # Same algorithm as for call merging:
+        currend = -Inf
+        rec_annots$callID = NA
+        j = 0  # call counter
+        for(i in 1:nrow(rec_annots)){
+            if(rec_annots$tstart[i]<=currend+gap){
+                # same call continues
+                currend = max(currend, rec_annots$tend[i])
+            } else {
+                # end prev call, start a new one
+                j = j+1
+                currend = rec_annots$tend[i]
+            }
+            rec_annots$callID[i] = j
+        }
+        rec_output = dplyr::group_by(rec_annots, callID) %>%
+                dplyr::summarize(tstart=min(tstart),
+                                 tend=max(tend),
+                                 rec=r
+                                 )  # add your own summary functions for any additional info here
+                                    # following dplyr::summarize format (vector in - scalar out)
+
+        rec_output$callID = NULL
+        output[[length(output)+1]] = rec_output
+    }
+    output = as.data.frame(dplyr::bind_rows(output))
+
+    return(output)
+}
 
 
 #' Final formatting of call history for ascr
@@ -264,7 +329,9 @@ annots_to_calls_1group <- function(annots, gap=0){
 #' @param calls A call history dataframe with columns `id` (arbitrary ID of each
 #'   call) and `rec` (recorder ID on which this capture/recapture was
 #'   registered). Auxiliary info may be provided in columns `bearing`, `dist`,
-#'   `ss`, `toa`.
+#'   `ss`, `toa`. All cues will be assigned to the same session.
+#'   If you need a multi-session model, inspect and modify the outputs manually
+#'   (see [ascr::fit.ascr()] and [ascr::create.capt()] for format instructions).
 #' @param gpspos A dataframe with the recorder locations: columns `rec`, `east`
 #'   and `north` with recorder ID, eastings and northings. `rec` is used for
 #'   matching with `calls` and creating a new, numeric recorder ID. Coordinates
@@ -350,9 +417,8 @@ prepare_capt <- function(calls, gpspos, survey.recs=NULL){
 
     # Call history prep:
     calls$occ = 1  # add dummy occasion parameter, ignored in ascr
-    calls$session = 1  # add session parameter
-    # TODO user should be able to have flexibility in this,
-    # but not sure where to pass it
+    calls$session = 1 # add session parameter. Multi-session possible,
+    # but requires complicated custom processing of traps into a list
 
     # Replace recorder names with numeric IDs
     calls = as.data.frame(dplyr::inner_join(calls, gpspos, by="rec"))

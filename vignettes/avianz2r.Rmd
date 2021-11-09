@@ -109,6 +109,18 @@ table(table(calls$id), dnn=c("captures"))
 Allowing at least a small gap is typically useful because AviaNZ may occasionally detect a call in fragments, and calls are rarely so dense that this offset could introduce false recaptures. However you may still want to edit this function, especially if you are using additional information which needs to be treated specially during merging, e.g. direction estimates.
 Note that any non-overlapping groups identified earlier can be specified here via the `groups` argument.
 
+You can also use the `merge_syllables` function to pre-merge detections within each recorder (this way, you can pre-merge syllables with a more liberal time gap than used for recaptures). This function is designed to be easily modifiable, e.g. by `merge_syllables_custom <- edit(merge_syllables)`, so you can include additional parsing rules. For example, if the syllable data has a `loudness` information column, we might want to create a "call loudness" by averaging those, weighing by the syllable length:
+```{r merging2, eval=F}
+...
+        rec_output = dplyr::group_by(rec_annots, callID) %>%
+                dplyr::summarize(tstart=min(tstart),
+                                 tend=max(tend),
+                                 loudness=weighted.mean(loudness, tend-tstart),
+                                 rec=r
+                                 ) 
+...
+```
+
 ### Formatting for SCR
 Final formatting for SCR is done by the `prepare_capt` function in this package. This is a simple format change and does not introduce new information.
 However, at this stage we also need the recorder GPS positions. Most likely they will be recorded as longitude and latitude, whereas for result interpretability we wish to convert them into meters easting and northing. Such projection can be done in R:

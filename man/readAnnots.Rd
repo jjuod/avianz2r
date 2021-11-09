@@ -50,12 +50,12 @@ or numeric, seconds relative to file start, if file times could not be identifie
 or 0, if not specified)
 \item any further columns from the label, typically \code{species},
 \code{certainty} and \code{filter}
-\item \code{ftime} (POSIXct, starting time of the file) or \code{fname} (character, the file
-name, if timestamps could not be identified)
-\item \code{rec} (name of the recorder).
+\item \code{ftime} (POSIXct, starting time of the file) or \code{fname} (character, name of the
+audio file, if timestamps could not be identified)
+\item \code{rec} (character, ID of the recorder).
 }
 
-Note that an AviaNZ annotation may have multiple labels, corresponding to
+Note that an AviaNZ annotation may have multiple labels on a single timestamp, corresponding to
 different species; these will be parsed into individual rows.
 }
 \description{

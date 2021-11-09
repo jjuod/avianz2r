@@ -17,7 +17,7 @@ timestamps on a single recorder are merged into one capture, the
 measures of the first of these fragments will be assigned to it.}
 
 \item{gap}{A number in the same units as \verb{tstart,tend}.
-Annotations that are separated by this much or more will be merged into
+Annotations that are separated by this much or less will be merged into
 a single call. Default 0 merges any annotations that overlap or touch;
 setting it larger is useful if the calls are often detected as multiple
 annotations which should be merged into a single unit. Setting it below 0

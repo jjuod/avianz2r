@@ -10,7 +10,9 @@ prepare_capt(calls, gpspos, survey.recs = NULL)
 \item{calls}{A call history dataframe with columns \code{id} (arbitrary ID of each
 call) and \code{rec} (recorder ID on which this capture/recapture was
 registered). Auxiliary info may be provided in columns \code{bearing}, \code{dist},
-\code{ss}, \code{toa}.}
+\code{ss}, \code{toa}. All cues will be assigned to the same session.
+If you need a multi-session model, inspect and modify the outputs manually
+(see \code{\link[ascr:fit.ascr]{ascr::fit.ascr()}} and \code{\link[ascr:create.capt]{ascr::create.capt()}} for format instructions).}
 
 \item{gpspos}{A dataframe with the recorder locations: columns \code{rec}, \code{east}
 and \code{north} with recorder ID, eastings and northings. \code{rec} is used for

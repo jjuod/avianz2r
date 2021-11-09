@@ -65,6 +65,7 @@ plot_annots <- function(annots, days=NULL, hours=NULL){
     } else {
         annots$y = "calls"  # dummy, just to have all marks at same y
     }
+    annots$y = as.character(annots$y)
 
     totalsec = diff(range(annots$tstart))
     # Some heuristics to choose appropriate breaks,

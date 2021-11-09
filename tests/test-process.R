@@ -43,3 +43,14 @@ stopifnot(all.equal(calls2, calls))
 # should not merge across the recorders, only within:
 callssep = annots_to_calls(annots, groups=list("rec1", "rec2"))
 stopifnot(nrow(callssep)>nrow(calls))
+
+
+#  --------------------
+# simple merging:
+annots = data.frame(rec=c("rec1", "rec1", "rec1", "rec2", "rec2"),
+   tstart=c(0.0, 3.5, 7.1, 1.5, 5.5), tend=c(3.0, 4.5, 8.1, 6.0, 8.0))
+mergedref = structure(list(tstart = c(0, 7.1, 1.5), tend = c(4.5, 8.1, 8),
+                rec = c("rec1", "rec1", "rec2")), row.names = c(NA, -3L), class = "data.frame")
+## merge into 3 unique calls:
+annots2 = merge_syllables(annots, gap=2)
+stopifnot(all.equal(annots2, mergedref))

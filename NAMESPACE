@@ -3,6 +3,7 @@
 export("%>%")
 export(annots_to_calls)
 export(lag_clocks)
+export(merge_syllables)
 export(plot_annots)
 export(prepare_capt)
 export(readAnnots)
