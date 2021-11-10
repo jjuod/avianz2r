@@ -42,3 +42,28 @@ df2 <- readAnnots("2comp/")
 
 stopifnot(all.equal(df3, dfref))
 stopifnot(all.equal(df2, df3))
+
+# no-timestamp test:
+df0 <- readAnnots("0comp/")
+df0ref <- structure(list(tstart = c(2.81491500500127, 4.61166926351272,
+                                    6.16885628755598, 8.98377129255725,
+                                    11.7636107869418, 14.4299533654064,
+                                    21.5831749232175, 24.0182969849396),
+                         tend = c(3.68334622994847, 5.59988410569402,
+                                  7.3068006512799, 10.2115533692067,
+                                  12.8188303470214, 15.3228314547045,
+                                  22.3948822771249, 24.9923458096284),
+                         freqmin = c(503, 604, 427, 538, 682, 549, 660, 638),
+                         freqmax = c(6127, 6396, 6685, 6529, 6607, 6585, 6607, 6053),
+                         filter = c("M", "M", "M", "M","M", "M", "M", "M"),
+                         species = c("Morepork", "Morepork", "Morepork", "Morepork",
+                                     "Morepork", "Morepork", "Morepork", "Morepork"),
+                         certainty = c(100, 100, 100, 100, 100, 100, 100, 100),
+                         calltype = c("trill", "trill", "trill", "trill",
+                                      "trill", "trill", "trill", "trill"),
+                         fname = c("ruru_1min.wav", "ruru_1min.wav", "ruru_1min.wav",
+                                   "ruru_1min.wav", "ruru_1min.wav", "ruru_1min.wav",
+                                   "ruru_1min.wav", "ruru_1min.wav"),
+                         rec = c(NA, NA, NA, NA, NA, NA, NA, NA)),
+                    row.names = c(NA, -8L), class = c("tbl_df", "tbl", "data.frame"))
+stopifnot(all.equal(df0, df0ref))
