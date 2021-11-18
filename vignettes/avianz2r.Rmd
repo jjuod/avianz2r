@@ -82,8 +82,8 @@ Note that although the timestamps are only printed down to seconds, i.e. they ap
 # calculate length of each annotation
 head(difftime(annots$tend, annots$tstart, units="secs"))
 
-# convert the timestamps to relative times from last sunset
-head(difftime(annots$tstart, lubridate::ymd_hms("20180122 204900"), units="mins"))
+# convert the timestamps to relative times from dawn
+head(difftime(annots$tstart, lubridate::ymd_hms("20191207 033500"), units="mins"))
 ```
 
 
