@@ -77,6 +77,13 @@ table(annots$rec)
 plot_annots(annots)
 ```
 
+The plotting scale will adapt automatically, so we can easily zoom in to the call bouts:
+
+```{r demoannotshort, fig.width=5, fig.height=2}
+example.bouts <- annots[annots$tstart<lubridate::ymd_hms("20191207 04:20:00"),] 
+plot_annots(example.bouts)
+```
+
 Note that although the timestamps are only printed down to seconds, i.e. they appear to be in YMD-HMS format, they do retain (almost) full precision of the input. In other words, operations on very short or very precise annotations can still be safely done, down to millisecond precision. You might find `difftime()` function useful when doing such arithmetic, as it allows specifying output units, e.g.:
 ```{r precisetimes}
 # calculate length of each annotation
@@ -194,7 +201,7 @@ summary(cr)
 locations(cr, 11, plot.estlocs =T)
 ```
 
-The main output of interest here is the call density estimate of `r round(coef(cr)["D"], 3)` calls/ha/survey. The estimated detection area is high for a typical bird survey, as this example dataset had many calls captured on all 3 recorders. 
+The main output of interest here is the call density estimate of `r round(coef(cr)["D"], 3)` call bouts/ha/survey. The estimated detection area is high for a typical bird survey, as this example dataset had many calls captured on all 3 recorders. 
 
 To convert the call density estimate into more relevant units, provide the `cue.rates` and `survey.length` parameters to `ascr`. Assuming sufficiently random calling positions, these parameters simply rescale the call density estimate. For example, here we assume that the survey took 2 hours and the animals produced on average 1.7 call bouts per hour:
 ```{r scr2}
@@ -203,4 +210,4 @@ cr = fit.ascr(capt, outlist$traps, mask, cue.rates=1.7, survey.length=2,
 summary(cr)
 ```
 
-Leading to a final density estimate of `r round(cr$coefficients["Da"], 3)` animals/ha.
+Leading to a final density estimate of `r round(cr$coefficients["Da"], 3)` animals/ha. Note also that the call density is also rescaled to a unit time, based on the given survey length; i.e. it should be read as `r round(cr$coefficients["D"], 3)` call bouts per hour per ha.
