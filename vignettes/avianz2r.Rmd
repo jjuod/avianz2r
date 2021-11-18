@@ -77,6 +77,16 @@ table(annots$rec)
 plot_annots(annots)
 ```
 
+Note that although the timestamps are only printed down to seconds, i.e. they appear to be in YMD-HMS format, they do retain (almost) full precision of the input. In other words, operations on very short or very precise annotations can still be safely done, down to millisecond precision. You might find `difftime()` function useful when doing such arithmetic, as it allows specifying output units, e.g.:
+```{r precisetimes}
+# calculate length of each annotation
+head(difftime(annots$tend, annots$tstart, units="secs"))
+
+# convert the timestamps to relative times from last sunset
+head(difftime(annots$tstart, lubridate::ymd_hms("20180122 204900"), units="mins"))
+```
+
+
 ### Timestamp adjustment
 
 Timestamp adjustment will require the user to determine the appropriate time offset that should be applied to each recorder to account for clock drift in the field. This can be done by AviaNZ `CompareCalls.py` utility, which attempts to maximize the total overlap between annotations in pairs of recorders, or manually based on loud events. This step is also essential to verify that the recorder detection ranges do overlap, and most events that match in time are recaptures of the same call. The `CompareCalls.py` utility can also be used to identify non-overlapping groups of recorders; note such cases, as they can be specified later.

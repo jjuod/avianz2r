@@ -146,6 +146,11 @@ loop_over_files <- function(d, filenames, alldts, recnames){
 #' annotdir = system.file("extdata", package="avianz2r", mustWork=TRUE)
 #' df <- readAnnots(annotdir)
 #'
+#' # Timestamps will be converted to actual times whenever possible.
+#' # Relative times (e.g. from file start) can be recreated with difftime:
+#' difftime(df$tstart, df$ftime)
+#' difftime(df$tstart, lubridate::ymd_hms("20180123 01:00:00"), units="secs")
+#'
 #' \dontrun{
 #' # If the filenames do not have timestamps, you can obtain a similar output
 #' # by attaching the times manually, like this:
