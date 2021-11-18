@@ -4,33 +4,41 @@
 \alias{plot_annots}
 \title{Visualize annotation times}
 \usage{
-plot_annots(annots, days = NULL, hours = NULL)
+plot_annots(annots, days = NULL, hours = NULL, colourby = "")
 }
 \arguments{
 \item{annots}{A dataframe containing at least \code{tstart} and \code{tend} columns.
 The annotations will be shown as line segments covering \verb{[tstart; tend]}.
-These columns must be POSIXt timestamps.
-Columns \code{rec} and/or \code{species}, if present and containing more than one unique value,
-will be used to spread out the timestamps along the Y axis. AviaNZ annotations
-can be read into this form directly with \code{\link[=readAnnots]{readAnnots()}} or \code{\link[=readAnnotsFile]{readAnnotsFile()}}.}
+These columns must be POSIXt timestamps. Columns \code{rec} and/or \code{species}, if
+present and containing more than one unique value, will be used to spread
+out the timestamps along the Y axis. AviaNZ annotations can be read into
+this form directly with \code{\link[=readAnnots]{readAnnots()}} or \code{\link[=readAnnotsFile]{readAnnotsFile()}}.}
 
-\item{days, hours}{Optional, numeric vectors. If specified, will only plot annotations
-starting within this(these) day(s) of the month or hour(s).
-Typically, only several hours of data can be usefully shown on this type of plot,
-as afterwards calls become too short and dense to distinguish. These parameters
-are provided as a quick way to inspect the data in parts.}
+\item{days, hours}{Optional, numeric vectors. If specified, will only plot
+annotations starting within this(these) day(s) of the month or hour(s).
+Typically, only several hours of data can be usefully shown on this type of
+plot, as afterwards calls become too short and dense to distinguish. These
+parameters are provided as a quick way to inspect the data in parts.}
+
+\item{colourby}{Optional, string, name of a column in \code{annots}. If provided,
+the annotation marks will be coloured according to this column's value
+(i.e. it is passed as the \code{col} aesthetic to ggplot). Can also be set to
+\code{"rec"} or \code{"species"} which would otherwise be plotted on the y axis.}
 }
 \value{
-A ggplot plot object. Such plots can be modified with the \code{+} operator;
-see \link{ggplot2} documentation for details.
+A ggplot plot object. Such plots can be modified with the \code{+}
+operator; see \link{ggplot2} documentation for details.
 }
 \description{
-Plots the provided timestamps for a quick visual overview, separating by species and recorders.
+Plots the provided timestamps for a quick visual overview, separating by
+species and recorders.
 }
 \examples{
 annotdir = system.file("extdata", package="avianz2r", mustWork=TRUE)
 df <- readAnnots(annotdir)
 plot_annots(df, hours=1)
+# colouring by species:
+plot_annots(df, colourby="species")
 # modifying the plot to split off custom time periods as rows:
 library(ggplot2)
 library(lubridate)
