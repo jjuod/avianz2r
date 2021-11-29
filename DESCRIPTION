@@ -1,6 +1,6 @@
 Package: avianz2r
 Title: Reading and Processing of AviaNZ Annotations in R
-Version: 0.2.3
+Version: 0.3.0
 Authors@R: 
     person(given = "Julius",
            family = "Juodakis",

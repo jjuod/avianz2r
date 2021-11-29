@@ -18,6 +18,8 @@
 #'   the annotation marks will be coloured according to this column's value
 #'   (i.e. it is passed as the `col` aesthetic to ggplot). Can also be set to
 #'   `"rec"` or `"species"` which would otherwise be plotted on the y axis.
+#' @param barsize Optional, number, can be used to adjust the bar size (helpful
+#'   when plotting longer time periods). Default 5.
 #'
 #' @return A ggplot plot object. Such plots can be modified with the `+`
 #'   operator; see [ggplot2] documentation for details.
@@ -35,7 +37,7 @@
 #' plot_annots(df[df$rec=="recA",]) +
 #'   facet_wrap(~minute(tstart), nrow=2, scales="free") +
 #'   scale_x_datetime(date_breaks="10 sec", date_minor_breaks="1 sec", date_label="%M.%S")
-plot_annots <- function(annots, days=NULL, hours=NULL, colourby=""){
+plot_annots <- function(annots, days=NULL, hours=NULL, colourby="", barsize=5){
     if(!is.data.frame(annots) | !"tstart" %in% colnames(annots) | !"tend" %in% colnames(annots)){
         stop("Data malformed, must be a dataframe with 'rec', 'tstart' and 'tend' columns.")
     }
@@ -103,13 +105,13 @@ plot_annots <- function(annots, days=NULL, hours=NULL, colourby=""){
         pstart = ggplot2::ggplot(annots) +
             ggplot2::geom_segment(ggplot2::aes(x=.data$tstart, xend=.data$tend,
                                                y=.data$y, yend=.data$y),
-                                  size=5, col="red")
+                                  size=barsize, col="red")
     } else {
         pstart = ggplot2::ggplot(annots) +
             ggplot2::geom_segment(ggplot2::aes(x=.data$tstart, xend=.data$tend,
                                                y=.data$y, yend=.data$y,
                                                col=.data[[colourby]]),
-                                  size=5)
+                                  size=barsize)
     }
 
     p = pstart +

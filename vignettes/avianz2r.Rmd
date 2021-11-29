@@ -43,6 +43,7 @@ It is available from [www.avianz.net](www.avianz.net); follow the download and i
 
 Use AviaNZ `Batch Processing` mode to process the recordings. This requires choosing the directory containing all files to be processed (e.g. `PROJECT/` above) and the recognizer for your species.
 Several recognizers are included in AviaNZ; if your target species is not included, follow the AviaNZ manual to prepare your own recognizers.
+If you are training and testing a recognizer, the function `readTestAnnots()` will be helpful.
 
 The analysis will produce one `.data` file (AviaNZ-format JSON) for each sound file, containing the detected event timestamps and some additional information about them, such as the detector name. The events may be calls, syllables or other cues, depending on your chosen recognizer.
 

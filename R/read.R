@@ -122,6 +122,9 @@ loop_over_files <- function(d, filenames, alldts, recnames){
 #'   times are critical for subsequent handling -- in case of any suspicious outputs,
 #'   a safer solution may be to separate the data into subdirectories by format,
 #'   and load each separately.
+#' @param ext Extension of the annotation files (regex). Can be used to read
+#'   files with alternative names, such as when loading testing results.
+#'   Internal use mostly, do not tweak unless you know what you are doing.
 #'
 #' @return A dataframe (namely, tibble) with one row per each species label, and
 #'   at least 6 columns:
@@ -161,11 +164,12 @@ loop_over_files <- function(d, filenames, alldts, recnames){
 #' df$tstart <- df$tstart + df$ftime
 #' df$tend <- df$tend + df$ftime
 #' }
-readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), exact=TRUE){
+readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), exact=TRUE,
+                       ext=".(wav|bmp).data$"){
     # Scan for wav or bmp annotations
     print(dir)
     print(list.files(dir))
-    filenames = list.files(dir, pattern=".(wav|bmp).data$", recursive=TRUE,
+    filenames = list.files(dir, pattern=ext, recursive=TRUE,
                            ignore.case=T)
     if(length(filenames)==0) stop(paste("no .data files found in directory", dir))
 
@@ -182,7 +186,7 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
         message("*** Attempting filename parsing in REC_DATE_TIME format ***")
         # Merge the last two parts into a timestamp
         tstamps = sapply(fn_parts, function(x) paste(x[2],
-                                    sub(".(wav|bmp).data", "", x[3], ignore.case=T), sep="_"))
+                                    sub(ext, "", x[3], ignore.case=T), sep="_"))
         # Attempt to parse timestamps. We pretend they are in POSIXct,
         # to avoid DST gaps which are not accounted by field sensors etc.
         alldts = lubridate::parse_date_time(tstamps, time.formats, exact=exact, tz="UTC")
@@ -199,7 +203,7 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
               all(subdirs!="") & all(subdirs!=".")){
         message("*** Attempting filename parsing in REC/DATE_TIME format ***")
         # Merge the two parts into a timestamp
-        tstamps = sapply(fn_parts, function(x) paste(x[1], sub(".(wav|bmp).data", "", x[2]), sep="_"))
+        tstamps = sapply(fn_parts, function(x) paste(x[1], sub(ext, "", x[2]), sep="_"))
         # Attempt to parse timestamps. We pretend they are in POSIXct,
         # to avoid DST gaps which are not accounted by field sensors etc.
         alldts = lubridate::parse_date_time(tstamps, time.formats, exact=exact, tz="UTC")
@@ -235,6 +239,40 @@ readAnnots <- function(dir, time.formats=c("%Y%m%d_%H%M%S", "%d%m%y_%H%M%S"), ex
     }
 
     message(sprintf("Loaded %d annotations from %d recorders", nrow(as), length(unique(as$rec))))
+
+    return(as)
+}
+
+
+#' Read AviaNZ recognizer test results
+#'
+#' Reads in three sets of annotations produced in AviaNZ recognizer testing.
+#'
+#' When testing a recognizer in AviaNZ, the automatic detections are stored in
+#' .tmpdata files and .tmp2data files (automatic detections before CNN).
+#' Comparing these, as well as the original .data files with manual annotations,
+#' might be of interest. This function reads in all these sets of annotations
+#' into one data frame. It is essentially a wrapper for [avianz2r::readAnnots()]
+#' - see there for details.
+#'
+#' @param dir Directory path containing AviaNZ annotations.
+#' @param ... Passed directly to [avianz2r::readAnnots()].
+#'
+#' @return A dataframe (namely, tibble) with one row per each species label, all
+#'   columns as described in [avianz2r::readAnnots()], plus a `detector` column:
+#'   "manual", "auto", or "auto_wv" indicating that the row is from the original
+#'   annotations, final detections, or detections after the wavelet stage only,
+#'   respectively. For filters without a CNN, same rows will be present as
+#'   "auto" and "auto_wv".
+#'
+#' @export
+#'
+readTestAnnots <- function(dir, ...){
+    manual = readAnnots(dir, ext=".(wav|bmp).data$", ...)
+    auto_wv = readAnnots(dir, ext=".(wav|bmp).tmp2data$", ...)
+    auto = readAnnots(dir, ext=".(wav|bmp).tmpdata$", ...)
+
+    as = dplyr::bind_rows("manual"=manual, "auto_wv"=auto_wv, "auto"=auto, .id="detector")
 
     return(as)
 }

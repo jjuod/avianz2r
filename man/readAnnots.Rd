@@ -7,7 +7,8 @@
 readAnnots(
   dir,
   time.formats = c("\%Y\%m\%d_\%H\%M\%S", "\%d\%m\%y_\%H\%M\%S"),
-  exact = TRUE
+  exact = TRUE,
+  ext = ".(wav|bmp).data$"
 )
 }
 \arguments{
@@ -39,6 +40,10 @@ is present. See \code{\link[lubridate:parse_date_time]{lubridate::parse_date_tim
 times are critical for subsequent handling -- in case of any suspicious outputs,
 a safer solution may be to separate the data into subdirectories by format,
 and load each separately.}
+
+\item{ext}{Extension of the annotation files (regex). Can be used to read
+files with alternative names, such as when loading testing results.
+Internal use mostly, do not tweak unless you know what you are doing.}
 }
 \value{
 A dataframe (namely, tibble) with one row per each species label, and
